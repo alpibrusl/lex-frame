@@ -1,22 +1,30 @@
-name: Lex CI
+name: CI
 
 on:
   push:
     branches: ["**"]
   pull_request:
-    branches: ["**"]
+
+env:
+  LEX_VERSION: v0.9.1
 
 jobs:
-  ci:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Lex
-        run: curl -sSf https://install.lex-lang.dev | sh -s -- --version v0.9.1
+      - name: Install Lex toolchain
+        run: |
+          set -euo pipefail
+          TARGET=x86_64-unknown-linux-gnu
+          URL="https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/lex-${LEX_VERSION}-${TARGET}.tar.gz"
+          curl -sSfL "$URL" | tar -xz
+          sudo install -m 0755 "lex-${LEX_VERSION}-${TARGET}/lex" /usr/local/bin/lex
+          lex --version
 
-      - name: Add Lex to PATH
-        run: echo "$HOME/.lex/bin" >> $GITHUB_PATH
+      - name: Install package dependencies
+        run: lex pkg install
 
-      - name: Run Lex CI
-        run: lex ci
+      - name: Test
+        run: lex test
