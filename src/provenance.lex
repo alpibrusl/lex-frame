@@ -1,74 +1,70 @@
-# lex-frame — operation provenance log
-#
-# Every DataFrame carries a List[Op] recording what happened to it.
-# This is the audit trail that makes lex-frame AI-agent-friendly:
-# an agent can always call history(df) to explain its own work.
-#
-# Op variants are flat (no recursive nesting) as required by Lex.
-# Each variant carries only primitive metadata, not the full frame.
+# Op ADT — immutable audit trail embedded in every DataFrame.
+# Every transform appends one Op; agents read the history via inspect.history.
 
 import "std.str"  as str
 import "std.int"  as int
 import "std.list" as list
 
 type Op =
-    OpLoad({ source :: Str, rows :: Int })
-  | OpFilter({ predicate :: Str, kept :: Int })
-  | OpSelect({ cols :: List[Str] })
-  | OpDrop({ cols :: List[Str] })
-  | OpRename({ from_col :: Str, to_col :: Str })
-  | OpAddColumn({ name :: Str, expr :: Str })
-  | OpSort({ col :: Str, ascending :: Bool })
-  | OpGroupBy({ col :: Str, n_groups :: Int })
-  | OpJoin({ on :: Str, kind :: Str, result_rows :: Int })
-  | OpHead({ n :: Int })
-  | OpTail({ n :: Int })
-  | OpSlice({ from_row :: Int, to_row :: Int })
-  | OpPipe({ name :: Str })
+    OpLoad(Str, Int)      # source, nrows
+  | OpFilter(Str, Int)    # predicate_desc, kept_rows
+  | OpSelect(List[Str])   # kept_cols
+  | OpDrop(List[Str])     # dropped_cols
+  | OpRename(Str, Str)    # old_name, new_name
+  | OpAddColumn(Str)      # new_col_name
+  | OpSort(Str, Bool)     # col, asc
+  | OpGroupBy(List[Str])  # key_cols
+  | OpJoin(Str, Str)      # join_type, key_col
+  | OpHead(Int)
+  | OpTail(Int)
+  | OpSlice(Int, Int)     # start, stop
+  | OpPipe(Str)           # step_name
 
-# Constructors — call these instead of inline record literals.
-fn op_load(source :: Str, rows :: Int)           -> Op { OpLoad({ source: source, rows: rows }) }
-fn op_filter(predicate :: Str, kept :: Int)       -> Op { OpFilter({ predicate: predicate, kept: kept }) }
-fn op_select(cols :: List[Str])                   -> Op { OpSelect({ cols: cols }) }
-fn op_drop(cols :: List[Str])                     -> Op { OpDrop({ cols: cols }) }
-fn op_rename(from_col :: Str, to_col :: Str)      -> Op { OpRename({ from_col: from_col, to_col: to_col }) }
-fn op_add_col(name :: Str, expr :: Str)           -> Op { OpAddColumn({ name: name, expr: expr }) }
-fn op_sort(col :: Str, ascending :: Bool)         -> Op { OpSort({ col: col, ascending: ascending }) }
-fn op_group_by(col :: Str, n_groups :: Int)       -> Op { OpGroupBy({ col: col, n_groups: n_groups }) }
-fn op_join(on :: Str, kind :: Str, result_rows :: Int) -> Op { OpJoin({ on: on, kind: kind, result_rows: result_rows }) }
-fn op_head(n :: Int)                              -> Op { OpHead({ n: n }) }
-fn op_tail(n :: Int)                              -> Op { OpTail({ n: n }) }
-fn op_slice(from_row :: Int, to_row :: Int)       -> Op { OpSlice({ from_row: from_row, to_row: to_row }) }
-fn op_pipe(name :: Str)                           -> Op { OpPipe({ name: name }) }
+fn op_load(source :: Str, nrows :: Int) -> Op        { OpLoad(source, nrows) }
+fn op_filter(desc :: Str, kept :: Int) -> Op         { OpFilter(desc, kept) }
+fn op_select(cols :: List[Str]) -> Op                { OpSelect(cols) }
+fn op_drop(cols :: List[Str]) -> Op                  { OpDrop(cols) }
+fn op_rename(old :: Str, new :: Str) -> Op           { OpRename(old, new) }
+fn op_add_column(col :: Str) -> Op                   { OpAddColumn(col) }
+fn op_sort(col :: Str, asc :: Bool) -> Op            { OpSort(col, asc) }
+fn op_group_by(keys :: List[Str]) -> Op              { OpGroupBy(keys) }
+fn op_join(jtype :: Str, key :: Str) -> Op           { OpJoin(jtype, key) }
+fn op_head(n :: Int) -> Op                           { OpHead(n) }
+fn op_tail(n :: Int) -> Op                           { OpTail(n) }
+fn op_slice(start :: Int, stop :: Int) -> Op         { OpSlice(start, stop) }
+fn op_pipe(name :: Str) -> Op                        { OpPipe(name) }
 
-# Render a single Op as a human-readable step.
 fn render_op(op :: Op) -> Str {
   match op {
-    OpLoad(d)      => str.concat("LOAD ", str.concat(d.source, str.concat(" (", str.concat(int.to_str(d.rows), " rows)")))),
-    OpFilter(d)    => str.concat("FILTER ", str.concat(d.predicate, str.concat(" → ", str.concat(int.to_str(d.kept), " rows kept")))),
-    OpSelect(d)    => str.concat("SELECT [", str.concat(str.join(d.cols, ", "), "]")),
-    OpDrop(d)      => str.concat("DROP [", str.concat(str.join(d.cols, ", "), "]")),
-    OpRename(d)    => str.concat("RENAME ", str.concat(d.from_col, str.concat(" → ", d.to_col))),
-    OpAddColumn(d) => str.concat("ADD_COLUMN ", str.concat(d.name, str.concat(" := ", d.expr))),
-    OpSort(d)      => str.concat("SORT BY ", str.concat(d.col, if d.ascending { " ASC" } else { " DESC" })),
-    OpGroupBy(d)   => str.concat("GROUP_BY ", str.concat(d.col, str.concat(" (", str.concat(int.to_str(d.n_groups), " groups)")))),
-    OpJoin(d)      => str.concat("JOIN ON ", str.concat(d.on, str.concat(" [", str.concat(d.kind, str.concat("] → ", str.concat(int.to_str(d.result_rows), " rows")))))),
-    OpHead(d)      => str.concat("HEAD ", int.to_str(d.n)),
-    OpTail(d)      => str.concat("TAIL ", int.to_str(d.n)),
-    OpSlice(d)     => str.concat("SLICE ", str.concat(int.to_str(d.from_row), str.concat(":", int.to_str(d.to_row)))),
-    OpPipe(d)      => str.concat("PIPE ", d.name),
+    OpLoad(src, n)       =>
+      str.concat("load: source=\"", str.concat(src, str.concat("\" rows=", int.to_str(n)))),
+    OpFilter(desc, kept) =>
+      str.concat("filter: predicate=\"", str.concat(desc, str.concat("\" kept=", int.to_str(kept)))),
+    OpSelect(cols)       =>
+      str.concat("select: cols=[", str.concat(str.join(cols, ","), "]")),
+    OpDrop(cols)         =>
+      str.concat("drop: cols=[", str.concat(str.join(cols, ","), "]")),
+    OpRename(old, new)   =>
+      str.concat("rename: ", str.concat(old, str.concat(" -> ", new))),
+    OpAddColumn(col)     => str.concat("add_column: ", col),
+    OpSort(col, asc)     =>
+      str.concat("sort: column=\"", str.concat(col, str.concat("\" asc=", if asc { "true" } else { "false" }))),
+    OpGroupBy(keys)      =>
+      str.concat("group_by: keys=[", str.concat(str.join(keys, ","), "]")),
+    OpJoin(jtype, key)   =>
+      str.concat("join: type=", str.concat(jtype, str.concat(" key=", key))),
+    OpHead(n)            => str.concat("head: n=", int.to_str(n)),
+    OpTail(n)            => str.concat("tail: n=", int.to_str(n)),
+    OpSlice(s, e)        =>
+      str.concat("slice: start=", str.concat(int.to_str(s), str.concat(" stop=", int.to_str(e)))),
+    OpPipe(name)         => str.concat("pipe: step=\"", str.concat(name, "\"")),
   }
 }
 
-# Render full provenance as numbered steps. Used by inspect.history.
 fn render_history(ops :: List[Op]) -> Str {
-  if list.is_empty(ops) { "(no history)" }
-  else {
-    let numbered := list.map(list.enumerate(ops), fn (p :: (Int, Op)) -> Str {
-      let i  := match p { (a, _) => a }
-      let op := match p { (_, b) => b }
-      str.concat(int.to_str(i + 1), str.concat(". ", render_op(op)))
-    })
-    str.join(numbered, "\n")
-  }
+  let indexed := list.enumerate(ops)
+  let lines := list.map(indexed, fn (pair :: (Int, Op)) -> Str {
+    match pair { (i, op) => str.concat(int.to_str(i + 1), str.concat(". ", render_op(op))) }
+  })
+  str.join(lines, "\n")
 }

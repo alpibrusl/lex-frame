@@ -1,14 +1,9 @@
-# lex-frame — cell Value ADT
-#
-# Every DataFrame cell holds one of five variants. VNull signals a
-# missing value. As-float / as-int conversions are total (returning
-# Option) so downstream aggregations never crash on type mismatches.
-# All functions are pure; no effects.
+# Value ADT — every DataFrame cell holds one variant.
+# VNull represents missing / unknown data.
 
 import "std.str"   as str
 import "std.int"   as int
 import "std.float" as float
-import "std.list"  as list
 
 type Value =
     VNull
@@ -22,18 +17,18 @@ fn to_str(v :: Value) -> Str {
     VNull     => "null",
     VBool(b)  => if b { "true" } else { "false" },
     VInt(n)   => int.to_str(n),
-    VFloat(x) => float.to_str(x),
+    VFloat(f) => float.to_str(f),
     VStr(s)   => s,
   }
 }
 
 fn type_name(v :: Value) -> Str {
   match v {
-    VNull     => "null",
-    VBool(_)  => "bool",
-    VInt(_)   => "int",
-    VFloat(_) => "float",
-    VStr(_)   => "str",
+    VNull     => "Null",
+    VBool(_)  => "Bool",
+    VInt(_)   => "Int",
+    VFloat(_) => "Float",
+    VStr(_)   => "Str",
   }
 }
 
@@ -45,10 +40,9 @@ fn is_numeric(v :: Value) -> Bool {
   match v { VInt(_) => true, VFloat(_) => true, _ => false }
 }
 
-# int.to_float is available in lex >= 0.8.x
 fn as_float(v :: Value) -> Option[Float] {
   match v {
-    VFloat(x) => Some(x),
+    VFloat(f) => Some(f),
     VInt(n)   => Some(int.to_float(n)),
     _         => None,
   }
@@ -58,61 +52,72 @@ fn as_int(v :: Value) -> Option[Int] {
   match v { VInt(n) => Some(n), _ => None }
 }
 
-fn as_bool(v :: Value) -> Option[Bool] {
-  match v { VBool(b) => Some(b), _ => None }
-}
-
-fn as_str_val(v :: Value) -> Option[Str] {
-  match v { VStr(s) => Some(s), _ => None }
-}
-
-# Equality — mixed Int/Float widens to Float.
+# Structural equality with Int/Float widening.
 fn eq(a :: Value, b :: Value) -> Bool {
-  match (a, b) {
-    (VNull,     VNull)     => true,
-    (VBool(x),  VBool(y))  => x == y,
-    (VInt(x),   VInt(y))   => x == y,
-    (VFloat(x), VFloat(y)) => x == y,
-    (VStr(x),   VStr(y))   => x == y,
-    (VInt(x),   VFloat(y)) => int.to_float(x) == y,
-    (VFloat(x), VInt(y))   => x == int.to_float(y),
-    _                      => false,
+  match a {
+    VNull    => match b { VNull => true, _ => false },
+    VBool(x) => match b { VBool(y) => x == y, _ => false },
+    VStr(x)  => match b { VStr(y)  => x == y, _ => false },
+    VInt(x)  => match b {
+      VInt(y)   => x == y,
+      VFloat(y) => int.to_float(x) == y,
+      _         => false,
+    },
+    VFloat(x) => match b {
+      VFloat(y) => x == y,
+      VInt(y)   => x == int.to_float(y),
+      _         => false,
+    },
   }
 }
 
-# Ordering — VNull sorts lowest; mixed numeric widens to Float.
+# VNull sorts lowest; mismatched types fall back to type_name lexicographic order.
 fn lt(a :: Value, b :: Value) -> Bool {
-  match (a, b) {
-    (VNull,     VNull)     => false,
-    (VNull,     _)         => true,
-    (_,         VNull)     => false,
-    (VInt(x),   VInt(y))   => x < y,
-    (VFloat(x), VFloat(y)) => x < y,
-    (VInt(x),   VFloat(y)) => int.to_float(x) < y,
-    (VFloat(x), VInt(y))   => x < int.to_float(y),
-    (VStr(x),   VStr(y))   => x < y,
-    (VBool(x),  VBool(y))  => if x { false } else { y },
-    _                      => false,
+  match a {
+    VNull => match b { VNull => false, _ => true },
+    VInt(x) => match b {
+      VNull     => false,
+      VInt(y)   => x < y,
+      VFloat(y) => int.to_float(x) < y,
+      _         => type_name(a) < type_name(b),
+    },
+    VFloat(x) => match b {
+      VNull     => false,
+      VFloat(y) => x < y,
+      VInt(y)   => x < int.to_float(y),
+      _         => type_name(a) < type_name(b),
+    },
+    VStr(x) => match b {
+      VNull   => false,
+      VStr(y) => x < y,
+      _       => type_name(a) < type_name(b),
+    },
+    VBool(x) => match b {
+      VNull    => false,
+      VBool(y) => if x { false } else { y },
+      _        => type_name(a) < type_name(b),
+    },
   }
 }
 
-fn lte(a :: Value, b :: Value) -> Bool { eq(a, b) or lt(a, b) }
+fn lte(a :: Value, b :: Value) -> Bool { lt(a, b) or eq(a, b) }
 fn gt(a :: Value, b :: Value)  -> Bool { lt(b, a) }
 fn gte(a :: Value, b :: Value) -> Bool { lte(b, a) }
 
-# Heuristic parse: int → float → bool → str.
-# Used by CSV readers and agent payload parsers.
+# Heuristic: try Int, then Float, then Bool, then null sentinel, else Str.
 fn parse_str(s :: Str) -> Value {
-  let t := str.trim(s)
-  if t == "" or t == "null" { VNull }
-  else if t == "true"  { VBool(true)  }
-  else if t == "false" { VBool(false) }
-  else {
-    match str.to_int(t) {
+  if s == "null" or s == "NULL" or s == "" {
+    VNull
+  } else if s == "true" {
+    VBool(true)
+  } else if s == "false" {
+    VBool(false)
+  } else {
+    match str.to_int(s) {
       Some(n) => VInt(n),
-      None    => match str.to_float(t) {
-        Some(x) => VFloat(x),
-        None    => VStr(t),
+      None    => match str.to_float(s) {
+        Some(f) => VFloat(f),
+        None    => VStr(s),
       },
     }
   }
