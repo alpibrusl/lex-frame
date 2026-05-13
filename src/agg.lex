@@ -1,124 +1,142 @@
-# lex-frame — column-level aggregation functions
-#
-# All functions take a List[Value] (a column) and return a scalar.
-# Non-numeric values are silently skipped in numeric aggregations.
-# Null values are always excluded from counts unless using count_all.
+# Column-level aggregation functions.
+# All aggregations skip VNull values unless stated otherwise.
 
 import "std.list"  as list
 import "std.int"   as int
 import "std.float" as float
 import "std.math"  as math
+import "std.map"   as map
 import "./value" as val
+import "./frame" as frame
 
-# Total row count (including nulls).
-fn count_all(col :: List[Value]) -> Int { list.len(col) }
+fn get_col(df :: frame.DataFrame, name :: Str) -> List[val.Value] {
+  match map.get(df.columns, name) { Some(c) => c, None => [] }
+}
 
-# Count of non-null values.
-fn count_non_null(col :: List[Value]) -> Int {
-  list.fold(col, 0, fn (acc :: Int, v :: Value) -> Int {
-    if val.is_null(v) { acc } else { acc + 1 }
+fn count_all(df :: frame.DataFrame, col :: Str) -> Int {
+  df.nrows
+}
+
+fn count_non_null(df :: frame.DataFrame, col :: Str) -> Int {
+  list.len(list.filter(get_col(df, col), fn (v :: val.Value) -> Bool {
+    if val.is_null(v) { false } else { true }
+  }))
+}
+
+fn numeric_vals(col :: List[val.Value]) -> List[Float] {
+  list.fold(col, [], fn (acc :: List[Float], v :: val.Value) -> List[Float] {
+    match val.as_float(v) {
+      Some(f) => list.cons(f, acc),
+      None    => acc,
+    }
   })
 }
 
-# Sum of numeric values. Returns VNull if no numeric values.
-fn sum_col(col :: List[Value]) -> Value {
-  let nums := list.filter(col, fn (v :: Value) -> Bool { val.is_numeric(v) })
-  if list.is_empty(nums) { val.VNull }
+fn all_ints(col :: List[val.Value]) -> Bool {
+  list.all(col, fn (v :: val.Value) -> Bool {
+    match v { val.VInt(_) => true, val.VNull => true, _ => false }
+  })
+}
+
+fn sum_col(df :: frame.DataFrame, col_name :: Str) -> Option[val.Value] {
+  let col := get_col(df, col_name)
+  let nums := numeric_vals(col)
+  if list.is_empty(nums) { None }
   else {
-    # Detect if any Float is present; if so, sum as Float.
-    let has_float := list.any(nums, fn (v :: Value) -> Bool {
-      match v { VFloat(_) => true, _ => false }
-    })
-    if has_float {
-      let total := list.fold(nums, 0.0, fn (acc :: Float, v :: Value) -> Float {
-        match val.as_float(v) { Some(x) => acc + x, None => acc }
-      })
-      val.VFloat(total)
+    let total := list.fold(nums, 0.0, fn (acc :: Float, f :: Float) -> Float { acc + f })
+    if all_ints(col) {
+      match int.parse(float.to_str(total)) {
+        Some(n) => Some(val.VInt(n)),
+        None    => Some(val.VFloat(total)),
+      }
     } else {
-      let total := list.fold(nums, 0, fn (acc :: Int, v :: Value) -> Int {
-        match val.as_int(v) { Some(n) => acc + n, None => acc }
-      })
-      val.VInt(total)
+      Some(val.VFloat(total))
     }
   }
 }
 
-# Mean of numeric values. Always returns Float.
-fn mean_col(col :: List[Value]) -> Option[Float] {
-  let nums := list.filter(col, fn (v :: Value) -> Bool { val.is_numeric(v) })
-  let n    := list.len(nums)
+fn mean_col(df :: frame.DataFrame, col_name :: Str) -> Option[Float] {
+  let nums := numeric_vals(get_col(df, col_name))
+  let n := list.len(nums)
   if n == 0 { None }
   else {
-    let total := list.fold(nums, 0.0, fn (acc :: Float, v :: Value) -> Float {
-      match val.as_float(v) { Some(x) => acc + x, None => acc }
-    })
+    let total := list.fold(nums, 0.0, fn (acc :: Float, f :: Float) -> Float { acc + f })
     Some(total / int.to_float(n))
   }
 }
 
-# Minimum value (excluding nulls). Uses val.lt for ordering.
-fn min_col(col :: List[Value]) -> Option[Value] {
-  let non_null := list.filter(col, fn (v :: Value) -> Bool { not val.is_null(v) })
-  match list.head(non_null) {
-    None    => None,
-    Some(h) => Some(list.fold(non_null, h, fn (acc :: Value, v :: Value) -> Value {
-      if val.lt(v, acc) { v } else { acc }
-    })),
+fn min_col(df :: frame.DataFrame, col_name :: Str) -> Option[val.Value] {
+  let col := list.filter(get_col(df, col_name), fn (v :: val.Value) -> Bool {
+    if val.is_null(v) { false } else { true }
+  })
+  if list.is_empty(col) { None }
+  else {
+    match list.head(col) {
+      None    => None,
+      Some(h) => Some(list.fold(col, h, fn (acc :: val.Value, v :: val.Value) -> val.Value {
+        if val.lt(v, acc) { v } else { acc }
+      }))
+    }
   }
 }
 
-# Maximum value (excluding nulls).
-fn max_col(col :: List[Value]) -> Option[Value] {
-  let non_null := list.filter(col, fn (v :: Value) -> Bool { not val.is_null(v) })
-  match list.head(non_null) {
-    None    => None,
-    Some(h) => Some(list.fold(non_null, h, fn (acc :: Value, v :: Value) -> Value {
-      if val.gt(v, acc) { v } else { acc }
-    })),
+fn max_col(df :: frame.DataFrame, col_name :: Str) -> Option[val.Value] {
+  let col := list.filter(get_col(df, col_name), fn (v :: val.Value) -> Bool {
+    if val.is_null(v) { false } else { true }
+  })
+  if list.is_empty(col) { None }
+  else {
+    match list.head(col) {
+      None    => None,
+      Some(h) => Some(list.fold(col, h, fn (acc :: val.Value, v :: val.Value) -> val.Value {
+        if val.gt(v, acc) { v } else { acc }
+      }))
+    }
   }
 }
 
-# Variance (population) of numeric values.
-fn variance_col(col :: List[Value]) -> Option[Float] {
-  match mean_col(col) {
-    None    => None,
-    Some(m) => {
-      let nums := list.filter(col, fn (v :: Value) -> Bool { val.is_numeric(v) })
-      let n    := list.len(nums)
-      if n == 0 { None }
-      else {
-        let sq_sum := list.fold(nums, 0.0, fn (acc :: Float, v :: Value) -> Float {
-          match val.as_float(v) {
-            None    => acc,
-            Some(x) => { let d := x - m
-                          acc + d * d },
-          }
-        })
-        Some(sq_sum / int.to_float(n))
-      }
-    },
+fn variance_col(df :: frame.DataFrame, col_name :: Str) -> Option[Float] {
+  let nums := numeric_vals(get_col(df, col_name))
+  let n := list.len(nums)
+  if n < 2 { None }
+  else {
+    let n_f := int.to_float(n)
+    let sum := list.fold(nums, 0.0, fn (acc :: Float, f :: Float) -> Float { acc + f })
+    let mean := sum / n_f
+    let sq_diff := list.fold(nums, 0.0, fn (acc :: Float, f :: Float) -> Float {
+      let d := f - mean
+      acc + d * d
+    })
+    Some(sq_diff / int.to_float(n - 1))
   }
 }
 
-# Standard deviation (population).
-fn std_col(col :: List[Value]) -> Option[Float] {
-  match variance_col(col) {
+fn std_col(df :: frame.DataFrame, col_name :: Str) -> Option[Float] {
+  match variance_col(df, col_name) {
     None    => None,
     Some(v) => Some(math.sqrt(v)),
   }
 }
 
-# Count distinct non-null values.
-fn n_distinct(col :: List[Value]) -> Int {
-  let non_null := list.filter(col, fn (v :: Value) -> Bool { not val.is_null(v) })
-  list.len(dedup_vals(non_null))
+fn n_distinct(df :: frame.DataFrame, col_name :: Str) -> Int {
+  let col := get_col(df, col_name)
+  let seen := list.fold(col, map.new(), fn (acc :: Map[Str, Bool], v :: val.Value) -> Map[Str, Bool] {
+    map.set(acc, val.to_str(v), true)
+  })
+  map.fold(seen, 0, fn (acc :: Int, _k :: Str, _v :: Bool) -> Int { acc + 1 })
 }
 
-# Remove duplicate Values preserving first-occurrence order.
-fn dedup_vals(xs :: List[Value]) -> List[Value] {
-  list.reverse(list.fold(xs, [],
-    fn (acc :: List[Value], v :: Value) -> List[Value] {
-      let already := list.any(acc, fn (a :: Value) -> Bool { val.eq(a, v) })
-      if already { acc } else { list.cons(v, acc) }
-    }))
+fn dedup_vals(col :: List[val.Value]) -> List[val.Value] {
+  let result := list.fold(col, (map.new(), []), fn (acc :: (Map[Str, Bool], List[val.Value]), v :: val.Value) -> (Map[Str, Bool], List[val.Value]) {
+    match acc {
+      (seen, out) => {
+        let key := val.to_str(v)
+        match map.get(seen, key) {
+          Some(_) => (seen, out),
+          None    => (map.set(seen, key, true), list.cons(v, out)),
+        }
+      },
+    }
+  })
+  match result { (_, out) => list.reverse(out) }
 }
