@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  LEX_VERSION: v0.9.1
+  LEX_VERSION: v0.9.2
 
 jobs:
   build:
