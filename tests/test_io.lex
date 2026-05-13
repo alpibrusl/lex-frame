@@ -1,13 +1,13 @@
 import "std.list" as list
 import "std.str" as str
-import "src/value" as val
-import "src/frame" as frame
-import "src/io" as io
+import "../src/value" as val
+import "../src/frame" as frame
+import "../src/io" as io
 
 fn make_df() -> frame.DataFrame {
-  let names = list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), []))
-  let ages  = list.cons(val.VInt(25), list.cons(val.VInt(30), []))
-  let cols  = list.cons(("name", names), list.cons(("age", ages), []))
+  let names := list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), []))
+  let ages  := list.cons(val.VInt(25), list.cons(val.VInt(30), []))
+  let cols  := list.cons(("name", names), list.cons(("age", ages), []))
   match frame.from_columns(cols) {
     Ok(df) => df
     Err(_) => frame.empty()
@@ -43,12 +43,12 @@ fn test_parse_csv_empty_body_is_error() -> Int {
 }
 
 fn test_render_csv_nonempty() -> Int {
-  let csv = io.render_csv(make_df())
+  let csv := io.render_csv(make_df())
   if str.is_empty(csv) { 1 } else { 0 }
 }
 
 fn test_render_csv_roundtrip_nrows() -> Int {
-  let csv = io.render_csv(make_df())
+  let csv := io.render_csv(make_df())
   match io.parse_csv(csv) {
     Ok(df2) => if df2.nrows == 2 { 0 } else { 1 }
     Err(_)  => 1
@@ -56,7 +56,7 @@ fn test_render_csv_roundtrip_nrows() -> Int {
 }
 
 fn test_render_csv_roundtrip_ncols() -> Int {
-  let csv = io.render_csv(make_df())
+  let csv := io.render_csv(make_df())
   match io.parse_csv(csv) {
     Ok(df2) => if list.len(df2.col_names) == 2 { 0 } else { 1 }
     Err(_)  => 1
@@ -64,12 +64,12 @@ fn test_render_csv_roundtrip_ncols() -> Int {
 }
 
 fn test_render_json_rows_nonempty() -> Int {
-  let json = io.render_json_rows(make_df())
+  let json := io.render_json_rows(make_df())
   if str.is_empty(json) { 1 } else { 0 }
 }
 
 fn test_render_json_rows_starts_with_bracket() -> Int {
-  let json = io.render_json_rows(make_df())
+  let json := io.render_json_rows(make_df())
   if str.contains(json, "[") { 0 } else { 1 }
 }
 

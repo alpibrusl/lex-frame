@@ -24,6 +24,15 @@ fn frame_err(code :: Str, message :: Str, context :: Str) -> FrameError {
   { code: code, message: message, context: context }
 }
 
+fn not_found_error(col :: Str) -> FrameError {
+  frame_err("FRAME_COLUMN_NOT_FOUND", str.concat("column '", str.concat(col, "' not found")), col)
+}
+
+fn record_op(df :: DataFrame, op :: prov.Op) -> DataFrame {
+  { col_names: df.col_names, columns: df.columns, nrows: df.nrows,
+    provenance: list.cons(op, df.provenance) }
+}
+
 fn empty() -> DataFrame {
   { col_names: [], columns: map.new(), nrows: 0, provenance: [] }
 }

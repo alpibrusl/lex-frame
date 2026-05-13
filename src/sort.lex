@@ -1,32 +1,33 @@
 # lex-frame — sort operations
 #
-# sort_by: sort all rows by one column’s values (asc or desc).
+# sort_by: sort all rows by one column's values (asc or desc).
 # sort_by_cols: multi-key sort (primary, secondary, ...).
 #
-# Internally: argsort via merge sort on List[(Int, Value)] to get
+# Internally: argsort via merge sort on List[(Int, val.Value)] to get
 # a sorted permutation of row indices, then reorder all columns.
 # merge_sort is O(n log n). No stdlib sort required.
 
 import "std.list" as list
+import "std.map"  as map
 import "std.str"  as str
 import "./value"      as val
 import "./frame"      as frame
 import "./provenance" as prov
 
-# Sort the DataFrame by column `col`. Returns Err if col not found.
+# Sort the DataFrame by column `col`. Returns df unchanged if col not found.
 fn sort_by(
   df  :: frame.DataFrame,
   col :: Str,
   asc :: Bool
-) -> Result[frame.DataFrame, frame.FrameError] {
+) -> frame.DataFrame {
   match map.get(df.columns, col) {
-    None          => Err(frame.not_found_error(col)),
+    None          => df,
     Some(key_col) => {
       let indexed      := list.enumerate(key_col)
       let sorted_pairs := merge_sort(indexed, asc)
-      let indices      := list.map(sorted_pairs, fn (p :: (Int, Value)) -> Int { match p { (i, _) => i } })
+      let indices      := list.map(sorted_pairs, fn (p :: (Int, val.Value)) -> Int { match p { (i, _) => i } })
       let sub          := frame.pick_rows(df, indices)
-      Ok(frame.record_op(sub, prov.op_sort(col, asc)))
+      frame.record_op(sub, prov.op_sort(col, asc))
     },
   }
 }
@@ -36,25 +37,18 @@ fn sort_by(
 fn sort_by_cols(
   df    :: frame.DataFrame,
   specs :: List[(Str, Bool)]
-) -> Result[frame.DataFrame, frame.FrameError] {
-  list.fold(list.reverse(specs), Ok(df),
-    fn (acc :: Result[frame.DataFrame, frame.FrameError], spec :: (Str, Bool)) -> Result[frame.DataFrame, frame.FrameError] {
-      match acc {
-        Err(e) => Err(e),
-        Ok(d)  => {
-          let col := match spec { (a, _) => a }
-          let asc := match spec { (_, b) => b }
-          sort_by(d, col, asc)
-        },
-      }
+) -> frame.DataFrame {
+  list.fold(list.reverse(specs), df,
+    fn (acc :: frame.DataFrame, spec :: (Str, Bool)) -> frame.DataFrame {
+      let col := match spec { (a, _) => a }
+      let asc := match spec { (_, b) => b }
+      sort_by(acc, col, asc)
     })
 }
 
-# ---- Merge sort on List[(Int, Value)] ----------------------------
+# ---- Merge sort on List[(Int, val.Value)] ----------------------------
 
-import "std.map" as map
-
-fn merge_sort(xs :: List[(Int, Value)], asc :: Bool) -> List[(Int, Value)] {
+fn merge_sort(xs :: List[(Int, val.Value)], asc :: Bool) -> List[(Int, val.Value)] {
   let n := list.len(xs)
   if n <= 1 { xs }
   else {
@@ -66,10 +60,10 @@ fn merge_sort(xs :: List[(Int, Value)], asc :: Bool) -> List[(Int, Value)] {
 }
 
 fn merge_pairs(
-  a   :: List[(Int, Value)],
-  b   :: List[(Int, Value)],
+  a   :: List[(Int, val.Value)],
+  b   :: List[(Int, val.Value)],
   asc :: Bool
-) -> List[(Int, Value)] {
+) -> List[(Int, val.Value)] {
   match (list.head(a), list.head(b)) {
     (None, _)            => b,
     (_, None)            => a,
@@ -86,18 +80,18 @@ fn merge_pairs(
   }
 }
 
-fn take_pairs(xs :: List[(Int, Value)], n :: Int) -> List[(Int, Value)] {
+fn take_pairs(xs :: List[(Int, val.Value)], n :: Int) -> List[(Int, val.Value)] {
   list.reverse(list.fold(list.enumerate(xs), [],
-    fn (acc :: List[(Int, Value)], p :: (Int, (Int, Value))) -> List[(Int, Value)] {
+    fn (acc :: List[(Int, val.Value)], p :: (Int, (Int, val.Value))) -> List[(Int, val.Value)] {
       let i  := match p { (a, _) => a }
       let kv := match p { (_, b) => b }
       if i < n { list.cons(kv, acc) } else { acc }
     }))
 }
 
-fn drop_pairs(xs :: List[(Int, Value)], n :: Int) -> List[(Int, Value)] {
+fn drop_pairs(xs :: List[(Int, val.Value)], n :: Int) -> List[(Int, val.Value)] {
   list.reverse(list.fold(list.enumerate(xs), [],
-    fn (acc :: List[(Int, Value)], p :: (Int, (Int, Value))) -> List[(Int, Value)] {
+    fn (acc :: List[(Int, val.Value)], p :: (Int, (Int, val.Value))) -> List[(Int, val.Value)] {
       let i  := match p { (a, _) => a }
       let kv := match p { (_, b) => b }
       if i >= n { list.cons(kv, acc) } else { acc }

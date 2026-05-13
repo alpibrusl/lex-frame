@@ -1,12 +1,12 @@
 import "std.list" as list
-import "src/value" as val
-import "src/frame" as frame
-import "src/agg" as agg
+import "../src/value" as val
+import "../src/frame" as frame
+import "../src/agg" as agg
 
 fn make_df() -> frame.DataFrame {
-  let nums   = list.cons(val.VInt(10), list.cons(val.VInt(20), list.cons(val.VInt(30), list.cons(val.VNull, []))))
-  let floats = list.cons(val.VFloat(1.0), list.cons(val.VFloat(2.0), list.cons(val.VFloat(3.0), list.cons(val.VFloat(4.0), []))))
-  let cols   = list.cons(("nums", nums), list.cons(("floats", floats), []))
+  let nums   := list.cons(val.VInt(10), list.cons(val.VInt(20), list.cons(val.VInt(30), list.cons(val.VNull, []))))
+  let floats := list.cons(val.VFloat(1.0), list.cons(val.VFloat(2.0), list.cons(val.VFloat(3.0), list.cons(val.VFloat(4.0), []))))
+  let cols   := list.cons(("nums", nums), list.cons(("floats", floats), []))
   match frame.from_columns(cols) {
     Ok(df) => df
     Err(_) => frame.empty()
@@ -71,12 +71,12 @@ fn test_max_col_float() -> Int {
 }
 
 fn test_n_distinct_with_null() -> Int {
-  // [10, 20, 30, null] => 4 distinct values
+  # [10, 20, 30, null] => 4 distinct values
   if agg.n_distinct(make_df(), "nums") == 4 { 0 } else { 1 }
 }
 
 fn test_n_distinct_float() -> Int {
-  // [1.0, 2.0, 3.0, 4.0] => 4 distinct
+  # [1.0, 2.0, 3.0, 4.0] => 4 distinct
   if agg.n_distinct(make_df(), "floats") == 4 { 0 } else { 1 }
 }
 

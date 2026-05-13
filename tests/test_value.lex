@@ -1,5 +1,5 @@
 import "std.list" as list
-import "src/value" as val
+import "../src/value" as val
 
 fn test_vint_to_str() -> Int {
   if val.to_str(val.VInt(42)) == "42" { 0 } else { 1 }

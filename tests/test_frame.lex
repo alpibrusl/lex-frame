@@ -1,11 +1,11 @@
 import "std.list" as list
-import "src/value" as val
-import "src/frame" as frame
+import "../src/value" as val
+import "../src/frame" as frame
 
 fn make_df() -> frame.DataFrame {
-  let names = list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), list.cons(val.VStr("Charlie"), [])))
-  let ages  = list.cons(val.VInt(25), list.cons(val.VInt(30), list.cons(val.VInt(35), [])))
-  let cols  = list.cons(("name", names), list.cons(("age", ages), []))
+  let names := list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), list.cons(val.VStr("Charlie"), [])))
+  let ages  := list.cons(val.VInt(25), list.cons(val.VInt(30), list.cons(val.VInt(35), [])))
+  let cols  := list.cons(("name", names), list.cons(("age", ages), []))
   match frame.from_columns(cols) {
     Ok(df) => df
     Err(_) => frame.empty()
@@ -45,8 +45,8 @@ fn test_slice_empty() -> Int {
 }
 
 fn test_add_column_ncols() -> Int {
-  let df     = make_df()
-  let scores = list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
+  let df     := make_df()
+  let scores := list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
   match frame.add_column(df, "score", scores) {
     Ok(df2) => if list.len(df2.col_names) == 3 { 0 } else { 1 }
     Err(_)  => 1
@@ -54,8 +54,8 @@ fn test_add_column_ncols() -> Int {
 }
 
 fn test_add_column_nrows() -> Int {
-  let df     = make_df()
-  let scores = list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
+  let df     := make_df()
+  let scores := list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
   match frame.add_column(df, "score", scores) {
     Ok(df2) => if df2.nrows == 3 { 0 } else { 1 }
     Err(_)  => 1
@@ -63,8 +63,8 @@ fn test_add_column_nrows() -> Int {
 }
 
 fn test_add_column_length_mismatch() -> Int {
-  let df     = make_df()
-  let scores = list.cons(val.VInt(90), [])
+  let df     := make_df()
+  let scores := list.cons(val.VInt(90), [])
   match frame.add_column(df, "score", scores) {
     Ok(_)  => 1
     Err(_) => 0
@@ -86,9 +86,9 @@ fn test_drop_unknown_column() -> Int {
 }
 
 fn test_from_columns_length_mismatch() -> Int {
-  let name_col = list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), []))
-  let age_col  = list.cons(val.VInt(25), [])
-  let cols     = list.cons(("name", name_col), list.cons(("age", age_col), []))
+  let name_col := list.cons(val.VStr("Alice"), list.cons(val.VStr("Bob"), []))
+  let age_col  := list.cons(val.VInt(25), [])
+  let cols     := list.cons(("name", name_col), list.cons(("age", age_col), []))
   match frame.from_columns(cols) {
     Ok(_)  => 1
     Err(_) => 0
@@ -96,7 +96,7 @@ fn test_from_columns_length_mismatch() -> Int {
 }
 
 fn test_get_row_len() -> Int {
-  let row = frame.get_row(make_df(), 0)
+  let row := frame.get_row(make_df(), 0)
   if list.len(row) == 2 { 0 } else { 1 }
 }
 
