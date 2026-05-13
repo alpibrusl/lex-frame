@@ -83,103 +83,84 @@ fn test_lt_null_is_lowest() -> Int {
 
 fn test_parse_str_int() -> Int {
   match val.parse_str("42") {
-    val.VInt(n) => if n == 42 { 0 } else { 1 }
-    _ => 1
+    val.VInt(n) => if n == 42 { 0 } else { 1 },
+    _ => 1,
   }
 }
 
 fn test_parse_str_float() -> Int {
   match val.parse_str("3.14") {
-    val.VFloat(_) => 0
-    _ => 1
+    val.VFloat(_) => 0,
+    _ => 1,
   }
 }
 
 fn test_parse_str_bool_true() -> Int {
   match val.parse_str("true") {
-    val.VBool(b) => if b { 0 } else { 1 }
-    _ => 1
+    val.VBool(b) => if b { 0 } else { 1 },
+    _ => 1,
   }
 }
 
 fn test_parse_str_bool_false() -> Int {
   match val.parse_str("false") {
-    val.VBool(b) => if b { 1 } else { 0 }
-    _ => 1
+    val.VBool(b) => if b { 1 } else { 0 },
+    _ => 1,
   }
 }
 
 fn test_parse_str_null() -> Int {
   match val.parse_str("null") {
-    val.VNull => 0
-    _ => 1
+    val.VNull => 0,
+    _ => 1,
   }
 }
 
 fn test_parse_str_fallback() -> Int {
   match val.parse_str("hello world") {
-    val.VStr(s) => if s == "hello world" { 0 } else { 1 }
-    _ => 1
+    val.VStr(s) => if s == "hello world" { 0 } else { 1 },
+    _ => 1,
   }
 }
 
 fn test_as_float_int() -> Int {
   match val.as_float(val.VInt(3)) {
-    Some(f) => if f == 3.0 { 0 } else { 1 }
-    None => 1
+    Some(f) => if f == 3.0 { 0 } else { 1 },
+    None => 1,
   }
 }
 
 fn test_as_float_float() -> Int {
   match val.as_float(val.VFloat(2.5)) {
-    Some(f) => if f == 2.5 { 0 } else { 1 }
-    None => 1
+    Some(f) => if f == 2.5 { 0 } else { 1 },
+    None => 1,
   }
 }
 
 fn test_as_float_null() -> Int {
   match val.as_float(val.VNull) {
-    Some(_) => 1
-    None => 0
+    Some(_) => 1,
+    None => 0,
   }
 }
 
 fn test_as_float_str() -> Int {
   match val.as_float(val.VStr("hello")) {
-    Some(_) => 1
-    None => 0
+    Some(_) => 1,
+    None => 0,
   }
 }
 
-fn run_all() -> Int {
-  test_vint_to_str() +
-  test_vfloat_to_str() +
-  test_vbool_to_str() +
-  test_vstr_to_str() +
-  test_vnull_to_str() +
-  test_type_name_int() +
-  test_type_name_float() +
-  test_type_name_str() +
-  test_type_name_bool() +
-  test_type_name_null() +
-  test_is_null_true() +
-  test_is_null_false() +
-  test_is_numeric_int() +
-  test_is_numeric_float() +
-  test_is_numeric_str() +
-  test_eq_int_same() +
-  test_eq_int_diff() +
-  test_eq_int_float_widening() +
-  test_lt_int() +
-  test_lt_null_is_lowest() +
-  test_parse_str_int() +
-  test_parse_str_float() +
-  test_parse_str_bool_true() +
-  test_parse_str_bool_false() +
-  test_parse_str_null() +
-  test_parse_str_fallback() +
-  test_as_float_int() +
-  test_as_float_float() +
-  test_as_float_null() +
-  test_as_float_str()
+fn run_all() -> () {
+  let _ := test_vint_to_str() + test_vfloat_to_str() + test_vbool_to_str() +
+            test_vstr_to_str() + test_vnull_to_str() + test_type_name_int() +
+            test_type_name_float() + test_type_name_str() + test_type_name_bool() +
+            test_type_name_null() + test_is_null_true() + test_is_null_false() +
+            test_is_numeric_int() + test_is_numeric_float() + test_is_numeric_str() +
+            test_eq_int_same() + test_eq_int_diff() + test_eq_int_float_widening() +
+            test_lt_int() + test_lt_null_is_lowest() + test_parse_str_int() +
+            test_parse_str_float() + test_parse_str_bool_true() + test_parse_str_bool_false() +
+            test_parse_str_null() + test_parse_str_fallback() + test_as_float_int() +
+            test_as_float_float() + test_as_float_null() + test_as_float_str()
+  ()
 }

@@ -7,8 +7,8 @@ fn make_df() -> frame.DataFrame {
   let ages  := list.cons(val.VInt(25), list.cons(val.VInt(30), list.cons(val.VInt(35), [])))
   let cols  := list.cons(("name", names), list.cons(("age", ages), []))
   match frame.from_columns(cols) {
-    Ok(df) => df
-    Err(_) => frame.empty()
+    Ok(df) => df,
+    Err(_) => frame.empty(),
   }
 }
 
@@ -48,8 +48,8 @@ fn test_add_column_ncols() -> Int {
   let df     := make_df()
   let scores := list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
   match frame.add_column(df, "score", scores) {
-    Ok(df2) => if list.len(df2.col_names) == 3 { 0 } else { 1 }
-    Err(_)  => 1
+    Ok(df2) => if list.len(df2.col_names) == 3 { 0 } else { 1 },
+    Err(_)  => 1,
   }
 }
 
@@ -57,8 +57,8 @@ fn test_add_column_nrows() -> Int {
   let df     := make_df()
   let scores := list.cons(val.VInt(90), list.cons(val.VInt(85), list.cons(val.VInt(95), [])))
   match frame.add_column(df, "score", scores) {
-    Ok(df2) => if df2.nrows == 3 { 0 } else { 1 }
-    Err(_)  => 1
+    Ok(df2) => if df2.nrows == 3 { 0 } else { 1 },
+    Err(_)  => 1,
   }
 }
 
@@ -66,22 +66,22 @@ fn test_add_column_length_mismatch() -> Int {
   let df     := make_df()
   let scores := list.cons(val.VInt(90), [])
   match frame.add_column(df, "score", scores) {
-    Ok(_)  => 1
-    Err(_) => 0
+    Ok(_)  => 1,
+    Err(_) => 0,
   }
 }
 
 fn test_drop_column_ncols() -> Int {
   match frame.drop_column(make_df(), "age") {
-    Ok(df2) => if list.len(df2.col_names) == 1 { 0 } else { 1 }
-    Err(_)  => 1
+    Ok(df2) => if list.len(df2.col_names) == 1 { 0 } else { 1 },
+    Err(_)  => 1,
   }
 }
 
 fn test_drop_unknown_column() -> Int {
   match frame.drop_column(make_df(), "nonexistent") {
-    Ok(_)  => 1
-    Err(_) => 0
+    Ok(_)  => 1,
+    Err(_) => 0,
   }
 }
 
@@ -90,8 +90,8 @@ fn test_from_columns_length_mismatch() -> Int {
   let age_col  := list.cons(val.VInt(25), [])
   let cols     := list.cons(("name", name_col), list.cons(("age", age_col), []))
   match frame.from_columns(cols) {
-    Ok(_)  => 1
-    Err(_) => 0
+    Ok(_)  => 1,
+    Err(_) => 0,
   }
 }
 
@@ -100,20 +100,12 @@ fn test_get_row_len() -> Int {
   if list.len(row) == 2 { 0 } else { 1 }
 }
 
-fn run_all() -> Int {
-  test_empty_nrows() +
-  test_from_columns_nrows() +
-  test_from_columns_ncols() +
-  test_head_nrows() +
-  test_head_all() +
-  test_tail_nrows() +
-  test_slice_rows() +
-  test_slice_empty() +
-  test_add_column_ncols() +
-  test_add_column_nrows() +
-  test_add_column_length_mismatch() +
-  test_drop_column_ncols() +
-  test_drop_unknown_column() +
-  test_from_columns_length_mismatch() +
-  test_get_row_len()
+fn run_all() -> () {
+  let _ := test_empty_nrows() + test_from_columns_nrows() + test_from_columns_ncols() +
+            test_head_nrows() + test_head_all() + test_tail_nrows() +
+            test_slice_rows() + test_slice_empty() + test_add_column_ncols() +
+            test_add_column_nrows() + test_add_column_length_mismatch() +
+            test_drop_column_ncols() + test_drop_unknown_column() +
+            test_from_columns_length_mismatch() + test_get_row_len()
+  ()
 }

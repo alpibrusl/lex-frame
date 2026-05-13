@@ -32,7 +32,7 @@ fn estimate_par_cost(df :: frame.DataFrame) -> Int {
 fn par_apply_col(
   df        :: frame.DataFrame,
   col       :: Str,
-  transform :: (val.Value) -> val.Value
+  transform :: fn(val.Value) -> val.Value
 ) -> Result[frame.DataFrame, frame.FrameError] {
   match map.get(df.columns, col) {
     None     => Err(frame.not_found_error(col)),
@@ -49,7 +49,7 @@ fn par_apply_col(
 # fn receives (col_name, column_values) and returns new column_values.
 fn par_apply_all_cols(
   df        :: frame.DataFrame,
-  transform :: (Str, List[val.Value]) -> List[val.Value]
+  transform :: fn(Str, List[val.Value]) -> List[val.Value]
 ) -> frame.DataFrame {
   let name_col_pairs := list.map(df.col_names, fn (name :: Str) -> (Str, List[val.Value]) {
     match map.get(df.columns, name) {
@@ -78,7 +78,7 @@ fn par_apply_all_cols(
 fn par_filter_rows(
   df        :: frame.DataFrame,
   pred_desc :: Str,
-  pred      :: (List[(Str, val.Value)]) -> Bool
+  pred      :: fn(List[(Str, val.Value)]) -> Bool
 ) -> frame.DataFrame {
   let all_rows := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> (Int, Bool) {
     (i, pred(frame.get_row(df, i)))
@@ -95,7 +95,7 @@ fn par_filter_rows(
 # Each row is transformed; result must have the same column set.
 fn par_map_rows(
   df        :: frame.DataFrame,
-  transform :: (List[(Str, val.Value)]) -> List[(Str, val.Value)]
+  transform :: fn(List[(Str, val.Value)]) -> List[(Str, val.Value)]
 ) -> Result[frame.DataFrame, frame.FrameError] {
   let rows     := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> List[(Str, val.Value)] {
     frame.get_row(df, i)
@@ -107,15 +107,15 @@ fn par_map_rows(
         let k := match p { (a, _) => a }
         let v := match p { (_, b) => b }
         match acc {
-          val.VNull => if k == name { v } else { val.VNull }
-          _         => acc
+          val.VNull => if k == name { v } else { val.VNull },
+          _         => acc,
         }
       })
     })
     (name, col_vals)
   })
   match frame.from_columns(cols) {
-    Err(e) => Err(e),
+    Err(e)  => Err(e),
     Ok(df2) => Ok(frame.record_op(df2, prov.op_pipe("par_map_rows"))),
   }
 }

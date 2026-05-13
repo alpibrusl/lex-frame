@@ -9,8 +9,8 @@ fn make_df() -> frame.DataFrame {
   let names := list.cons(val.VStr("Charlie"), list.cons(val.VStr("Alice"), list.cons(val.VStr("Dave"), list.cons(val.VStr("Bob"), []))))
   let cols  := list.cons(("age", ages), list.cons(("name", names), []))
   match frame.from_columns(cols) {
-    Ok(df) => df
-    Err(_) => frame.empty()
+    Ok(df) => df,
+    Err(_) => frame.empty(),
   }
 }
 
@@ -26,8 +26,8 @@ fn test_sort_asc_first_is_min() -> Int {
   let sorted := srt.sort_by(make_df(), "age", true)
   let row    := frame.get_row(sorted, 0)
   match sel.row_get_or_null(row, "age") {
-    val.VInt(n) => if n == 20 { 0 } else { 1 }
-    _ => 1
+    val.VInt(n) => if n == 20 { 0 } else { 1 },
+    _ => 1,
   }
 }
 
@@ -35,8 +35,8 @@ fn test_sort_asc_last_is_max() -> Int {
   let sorted := srt.sort_by(make_df(), "age", true)
   let row    := frame.get_row(sorted, 3)
   match sel.row_get_or_null(row, "age") {
-    val.VInt(n) => if n == 35 { 0 } else { 1 }
-    _ => 1
+    val.VInt(n) => if n == 35 { 0 } else { 1 },
+    _ => 1,
   }
 }
 
@@ -44,8 +44,8 @@ fn test_sort_desc_first_is_max() -> Int {
   let sorted := srt.sort_by(make_df(), "age", false)
   let row    := frame.get_row(sorted, 0)
   match sel.row_get_or_null(row, "age") {
-    val.VInt(n) => if n == 35 { 0 } else { 1 }
-    _ => 1
+    val.VInt(n) => if n == 35 { 0 } else { 1 },
+    _ => 1,
   }
 }
 
@@ -54,8 +54,8 @@ fn test_sort_preserves_row_alignment() -> Int {
   let sorted := srt.sort_by(make_df(), "age", true)
   let row    := frame.get_row(sorted, 0)
   match sel.row_get_or_null(row, "name") {
-    val.VStr(s) => if s == "Bob" { 0 } else { 1 }
-    _ => 1
+    val.VStr(s) => if s == "Bob" { 0 } else { 1 },
+    _ => 1,
   }
 }
 
@@ -64,12 +64,10 @@ fn test_sort_by_cols_nrows() -> Int {
   if srt.sort_by_cols(make_df(), specs).nrows == 4 { 0 } else { 1 }
 }
 
-fn run_all() -> Int {
-  test_sort_preserves_nrows() +
-  test_sort_preserves_ncols() +
-  test_sort_asc_first_is_min() +
-  test_sort_asc_last_is_max() +
-  test_sort_desc_first_is_max() +
-  test_sort_preserves_row_alignment() +
-  test_sort_by_cols_nrows()
+fn run_all() -> () {
+  let _ := test_sort_preserves_nrows() + test_sort_preserves_ncols() +
+            test_sort_asc_first_is_min() + test_sort_asc_last_is_max() +
+            test_sort_desc_first_is_max() + test_sort_preserves_row_alignment() +
+            test_sort_by_cols_nrows()
+  ()
 }

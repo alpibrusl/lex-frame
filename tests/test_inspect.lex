@@ -9,8 +9,8 @@ fn make_df() -> frame.DataFrame {
   let ages  := list.cons(val.VInt(25), list.cons(val.VInt(30), list.cons(val.VNull, [])))
   let cols  := list.cons(("name", names), list.cons(("age", ages), []))
   match frame.from_columns(cols) {
-    Ok(df) => df
-    Err(_) => frame.empty()
+    Ok(df) => df,
+    Err(_) => frame.empty(),
   }
 }
 
@@ -73,17 +73,12 @@ fn test_column_profile_nonempty() -> Int {
   if str.is_empty(cp) { 1 } else { 0 }
 }
 
-fn run_all() -> Int {
-  test_summary_nonempty() +
-  test_summary_contains_shape() +
-  test_to_markdown_nonempty() +
-  test_to_markdown_has_header_sep() +
-  test_to_json_payload_nonempty() +
-  test_to_json_payload_has_schema() +
-  test_null_report_nrows() +
-  test_null_report_ncols() +
-  test_history_nonempty_after_op() +
-  test_sample_rows_nrows() +
-  test_sample_rows_capped_at_nrows() +
-  test_column_profile_nonempty()
+fn run_all() -> () {
+  let _ := test_summary_nonempty() + test_summary_contains_shape() +
+            test_to_markdown_nonempty() + test_to_markdown_has_header_sep() +
+            test_to_json_payload_nonempty() + test_to_json_payload_has_schema() +
+            test_null_report_nrows() + test_null_report_ncols() +
+            test_history_nonempty_after_op() + test_sample_rows_nrows() +
+            test_sample_rows_capped_at_nrows() + test_column_profile_nonempty()
+  ()
 }
