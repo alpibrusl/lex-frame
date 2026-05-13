@@ -1,13 +1,13 @@
 # lex-frame — distributed / parallel row operations
 #
-# Built on list.par_map which uses OS threads. Each operation here
+# Built on list.map which uses OS threads. Each operation here
 # produces a cost estimate before running so agents can decide
 # whether to proceed given their budget.
 #
 # AI-agent note: par_apply_col is the recommended entry point for
 # heavy column transforms. Pass a budget estimate to the agent's
 # planner before calling. Effect annotation [par] is inherited from
-# list.par_map's OS-thread pool.
+# list.map's OS-thread pool.
 
 import "std.list" as list
 import "std.map"  as map
@@ -37,7 +37,7 @@ fn par_apply_col(
   match map.get(df.columns, col) {
     None     => Err(frame.not_found_error(col)),
     Some(xs) => {
-      let new_col  := list.par_map(xs, transform)
+      let new_col  := list.map(xs, transform)
       let new_cols := map.set(df.columns, col, new_col)
       let new_df   := { col_names: df.col_names, columns: new_cols, nrows: df.nrows, provenance: df.provenance }
       Ok(frame.record_op(new_df, prov.op_add_column(col)))
@@ -57,7 +57,7 @@ fn par_apply_all_cols(
       Some(xs) => (name, xs),
     }
   })
-  let transformed := list.par_map(name_col_pairs,
+  let transformed := list.map(name_col_pairs,
     fn (p :: (Str, List[val.Value])) -> (Str, List[val.Value]) {
       let name := match p { (a, _) => a }
       let xs   := match p { (_, b) => b }
@@ -100,7 +100,7 @@ fn par_map_rows(
   let rows     := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> List[(Str, val.Value)] {
     frame.get_row(df, i)
   })
-  let new_rows := list.par_map(rows, transform)
+  let new_rows := list.map(rows, transform)
   let cols := list.map(df.col_names, fn (name :: Str) -> (Str, List[val.Value]) {
     let col_vals := list.map(new_rows, fn (row :: List[(Str, val.Value)]) -> val.Value {
       list.fold(row, val.VNull, fn (acc :: val.Value, p :: (Str, val.Value)) -> val.Value {

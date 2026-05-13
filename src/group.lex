@@ -60,10 +60,12 @@ fn group_by(df :: frame.DataFrame, col :: Str) -> Result[GroupedFrame, frame.Fra
           map.set(m, k, list.cons(i, existing))
         })
       # Convert map entries to GroupEntry list.
-      let groups_rev := map.fold(idx_map, [],
-        fn (acc :: List[GroupEntry], k :: Str, indices :: List[Int]) -> List[GroupEntry] {
-          let sub   := frame.pick_rows(df, list.reverse(indices))
-          let entry := { key_str: k, key_val: val.parse_str(k), subframe: sub }
+      let groups_rev := list.fold(map.entries(idx_map), [],
+        fn (acc :: List[GroupEntry], pair :: (Str, List[Int])) -> List[GroupEntry] {
+          let k       := match pair { (a, _) => a }
+          let indices := match pair { (_, b) => b }
+          let sub     := frame.pick_rows(df, list.reverse(indices))
+          let entry   := { key_str: k, key_val: val.parse_str(k), subframe: sub }
           list.cons(entry, acc)
         })
       let groups := list.reverse(groups_rev)

@@ -41,8 +41,10 @@ fn dominant_type(col :: List[val.Value]) -> Str {
         let c := match map.get(m, t) { Some(n) => n, None => 0 }
         map.set(m, t, c + 1)
       })
-    map.fold(counts, "unknown",
-      fn (best :: Str, t :: Str, c :: Int) -> Str {
+    list.fold(map.entries(counts), "unknown",
+      fn (best :: Str, pair :: (Str, Int)) -> Str {
+        let t := match pair { (a, _) => a }
+        let c := match pair { (_, b) => b }
         match map.get(counts, best) {
           None     => t,
           Some(bc) => if c > bc { t } else { best },
