@@ -25,8 +25,8 @@ fn numeric_floats(col :: List[val.Value]) -> List[Float] {
 }
 
 fn all_ints(col :: List[val.Value]) -> Bool {
-  list.all(col, fn (v :: val.Value) -> Bool {
-    match v { val.VInt(_) => true, val.VNull => true, _ => false }
+  list.fold(col, true, fn (acc :: Bool, v :: val.Value) -> Bool {
+    acc and match v { val.VInt(_) => true, val.VNull => true, _ => false }
   })
 }
 

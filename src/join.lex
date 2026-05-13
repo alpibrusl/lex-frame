@@ -77,7 +77,7 @@ fn left_join(
 fn cross_join(left :: frame.DataFrame, right :: frame.DataFrame) -> Result[frame.DataFrame, frame.FrameError] {
   let left_names  := left.col_names
   let right_names := list.map(right.col_names, fn (n :: Str) -> Str {
-    if list.any(left_names, fn (ln :: Str) -> Bool { ln == n }) { str.concat(n, "_right") } else { n }
+    if list.fold(left_names, false, fn (acc :: Bool, ln :: Str) -> Bool { acc or (ln == n) }) { str.concat(n, "_right") } else { n }
   })
   let all_names_rev := list.fold(right_names,
     list.fold(left_names, [], fn (a :: List[Str], s :: Str) -> List[Str] { list.cons(s, a) }),
@@ -133,7 +133,7 @@ fn result_col_names(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str
   let left_rest  := list.filter(left.col_names,  fn (n :: Str) -> Bool { n != on })
   let right_rest := list.filter(right.col_names, fn (n :: Str) -> Bool { n != on })
   let right_dis  := list.map(right_rest, fn (n :: Str) -> Str {
-    if list.any(left_rest, fn (ln :: Str) -> Bool { ln == n }) { str.concat(n, "_right") } else { n }
+    if list.fold(left_rest, false, fn (acc :: Bool, ln :: Str) -> Bool { acc or (ln == n) }) { str.concat(n, "_right") } else { n }
   })
   # Build [on] ++ left_rest ++ right_dis
   let rev := list.fold(right_dis,

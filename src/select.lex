@@ -8,18 +8,26 @@ import "./frame"      as frame
 import "./provenance" as prov
 
 fn row_get_or_null(row :: List[(Str, val.Value)], col :: Str) -> val.Value {
-  match list.find(row, fn (pair :: (Str, val.Value)) -> Bool {
-    match pair { (k, _) => k == col }
-  }) {
+  match list.fold(row, None,
+    fn (acc :: Option[(Str, val.Value)], pair :: (Str, val.Value)) -> Option[(Str, val.Value)] {
+      match acc {
+        Some(_) => acc,
+        None    => if match pair { (k, _) => k == col } { Some(pair) } else { None },
+      }
+    }) {
     None    => val.VNull,
     Some(p) => match p { (_, v) => v },
   }
 }
 
 fn row_get(row :: List[(Str, val.Value)], col :: Str) -> Option[val.Value] {
-  match list.find(row, fn (pair :: (Str, val.Value)) -> Bool {
-    match pair { (k, _) => k == col }
-  }) {
+  match list.fold(row, None,
+    fn (acc :: Option[(Str, val.Value)], pair :: (Str, val.Value)) -> Option[(Str, val.Value)] {
+      match acc {
+        Some(_) => acc,
+        None    => if match pair { (k, _) => k == col } { Some(pair) } else { None },
+      }
+    }) {
     None    => None,
     Some(p) => match p { (_, v) => Some(v) },
   }
@@ -27,7 +35,7 @@ fn row_get(row :: List[(Str, val.Value)], col :: Str) -> Option[val.Value] {
 
 fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
   let missing := list.filter(wanted, fn (name :: Str) -> Bool {
-    list.all(df.col_names, fn (n :: Str) -> Bool { n != name })
+    list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool { acc and (n != name) })
   })
   if list.is_empty(missing) {
     let new_cols := list.map(wanted, fn (name :: Str) -> (Str, List[val.Value]) {
@@ -48,13 +56,13 @@ fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataF
 
 fn drop_cols(df :: frame.DataFrame, to_drop :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
   let keep := list.filter(df.col_names, fn (name :: Str) -> Bool {
-    list.all(to_drop, fn (d :: Str) -> Bool { d != name })
+    list.fold(to_drop, true, fn (acc :: Bool, d :: Str) -> Bool { acc and (d != name) })
   })
   select_cols(df, keep)
 }
 
 fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
-  if list.all(df.col_names, fn (n :: Str) -> Bool { n != old_name }) {
+  if list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool { acc and (n != old_name) }) {
     Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND",
       str.concat("column '", str.concat(old_name, "' not found")), old_name))
   } else {

@@ -1,6 +1,7 @@
 # lex-frame — CSV and JSON row I/O
 #
 # Pure functions: parse_csv, render_csv, render_json_rows
+# Effect-bearing: read_csv [io], write_csv [io]
 #
 # CSV uses comma delimiter and a header row.
 # JSON rows format: [{"col":val,...}, ...] (array of objects).
@@ -10,6 +11,7 @@ import "std.list"  as list
 import "std.map"   as map
 import "std.int"   as int
 import "std.float" as float
+import "std.io"    as io
 import "./value"      as val
 import "./frame"      as frame
 import "./provenance" as prov
@@ -135,5 +137,21 @@ fn json_escape(s :: Str) -> Str {
       _    => c,
     })
   })
+}
+
+# ---- File I/O — effect-bearing -----------------------------------
+
+fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {
+  match io.read(path) {
+    Err(e)      => Err(frame.frame_err("io_error", str.concat("read failed: ", e), path)),
+    Ok(content) => parse_csv(content),
+  }
+}
+
+fn write_csv(path :: Str, df :: frame.DataFrame) -> [io] Result[Unit, frame.FrameError] {
+  match io.write(path, render_csv(df)) {
+    Err(e) => Err(frame.frame_err("io_error", str.concat("write failed: ", e), path)),
+    Ok(()) => Ok(()),
+  }
 }
 

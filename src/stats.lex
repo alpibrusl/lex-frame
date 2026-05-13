@@ -21,7 +21,7 @@ fn describe(df :: frame.DataFrame) -> frame.DataFrame {
   let numeric_cols := list.filter(df.col_names, fn (name :: Str) -> Bool {
     match map.get(df.columns, name) {
       None     => false,
-      Some(xs) => list.any(xs, fn (v :: val.Value) -> Bool { val.is_numeric(v) }),
+      Some(xs) => list.fold(xs, false, fn (acc :: Bool, v :: val.Value) -> Bool { acc or val.is_numeric(v) }),
     }
   })
   let stat_names := ["count", "mean", "std", "min", "max"]

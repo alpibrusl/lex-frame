@@ -45,9 +45,10 @@ fn from_columns(cols :: List[(Str, List[val.Value])]) -> Result[DataFrame, Frame
       None => Ok(empty()),
       Some(first_pair) => {
         let expected := match first_pair { (_, c) => list.len(c) }
-        let length_ok := list.all(cols, fn (pair :: (Str, List[val.Value])) -> Bool {
-          match pair { (_, c) => list.len(c) == expected }
-        })
+        let length_ok := list.fold(cols, true,
+          fn (acc :: Bool, pair :: (Str, List[val.Value])) -> Bool {
+            acc and match pair { (_, c) => list.len(c) == expected }
+          })
         if length_ok {
           let names := list.map(cols, fn (pair :: (Str, List[val.Value])) -> Str {
             match pair { (name, _) => name }
@@ -59,9 +60,13 @@ fn from_columns(cols :: List[(Str, List[val.Value])]) -> Result[DataFrame, Frame
           let op := prov.op_load("<from_columns>", expected)
           Ok({ col_names: names, columns: cols_map, nrows: expected, provenance: [op] })
         } else {
-          let bad := list.find(cols, fn (pair :: (Str, List[val.Value])) -> Bool {
-            match pair { (_, c) => list.len(c) != expected }
-          })
+          let bad := list.fold(cols, None,
+            fn (acc :: Option[(Str, List[val.Value])], pair :: (Str, List[val.Value])) -> Option[(Str, List[val.Value])] {
+              match acc {
+                Some(_) => acc,
+                None    => if match pair { (_, c) => list.len(c) != expected } { Some(pair) } else { None },
+              }
+            })
           match bad {
             None    => Err(frame_err("FRAME_LENGTH_MISMATCH", "column length mismatch", "")),
             Some(p) => match p {
@@ -146,7 +151,7 @@ fn add_column(df :: DataFrame, name :: Str, col :: List[val.Value]) -> Result[Da
 }
 
 fn drop_column(df :: DataFrame, name :: Str) -> Result[DataFrame, FrameError] {
-  if list.all(df.col_names, fn (n :: Str) -> Bool { n != name }) {
+  if list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool { acc and (n != name) }) {
     Err(frame_err("FRAME_COLUMN_NOT_FOUND",
       str.concat("column '", str.concat(name, "' not found")), name))
   } else {
