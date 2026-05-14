@@ -12,6 +12,8 @@ import "std.io" as io
 
 import "./value" as val
 
+import "./col" as col
+
 import "./frame" as frame
 
 import "./provenance" as prov
@@ -51,7 +53,7 @@ fn parse_csv(content :: Str) -> Result[frame.DataFrame, frame.FrameError] {
             (_, b) => b,
           }
           let col_vals := list.map(parsed_rows, fn (row :: List[val.Value]) -> val.Value {
-            frame.nth_value(row, col_idx)
+            nth_val_list(row, col_idx)
           })
           (col_name, col_vals)
         })
@@ -70,7 +72,7 @@ fn render_csv(df :: frame.DataFrame) -> Str {
     let vals := list.map(df.col_names, fn (name :: Str) -> Str {
       match map.get(df.columns, name) {
         None => "",
-        Some(col) => csv_escape(val.to_str(frame.nth_value(col, i))),
+        Some(c) => csv_escape(val.to_str(frame.nth_value(c, i))),
       }
     })
     str.join(vals, ",")
@@ -122,7 +124,7 @@ fn render_json_rows(df :: frame.DataFrame) -> Str {
     let pairs := list.map(df.col_names, fn (name :: Str) -> Str {
       let v := match map.get(df.columns, name) {
         None => val.vnull(),
-        Some(col) => frame.nth_value(col, i),
+        Some(c) => frame.nth_value(c, i),
       }
       str.concat("\"", str.concat(name, str.concat("\": ", json_value(v))))
     })
@@ -156,6 +158,22 @@ fn json_escape(s :: Str) -> Str {
       _ => c,
     })
   })
+}
+
+fn nth_val_list(xs :: List[val.Value], i :: Int) -> val.Value {
+  let m := list.fold(list.enumerate(xs), map.new(), fn (acc :: Map[Str, val.Value], p :: (Int, val.Value)) -> Map[Str, val.Value] {
+    let idx := match p {
+      (a, _) => a,
+    }
+    let v := match p {
+      (_, b) => b,
+    }
+    map.set(acc, int.to_str(idx), v)
+  })
+  match map.get(m, int.to_str(i)) {
+    Some(v) => v,
+    None => val.vnull(),
+  }
 }
 
 fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {

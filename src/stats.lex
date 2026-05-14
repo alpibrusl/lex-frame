@@ -12,6 +12,8 @@ import "std.math" as math
 
 import "./value" as val
 
+import "./col" as col
+
 import "./frame" as frame
 
 import "./agg" as agg
@@ -20,9 +22,10 @@ fn describe(df :: frame.DataFrame) -> frame.DataFrame {
   let numeric_cols := list.filter(df.col_names, fn (name :: Str) -> Bool {
     match map.get(df.columns, name) {
       None => false,
-      Some(xs) => list.fold(xs, false, fn (acc :: Bool, v :: val.Value) -> Bool {
-        acc or val.is_numeric(v)
-      }),
+      Some(c) => {
+        let t := col.col_type_name(c)
+        t == "Int" or t == "Float" or t == "Int?" or t == "Float?"
+      },
     }
   })
   let stat_names := ["count", "mean", "std", "min", "max"]
@@ -32,8 +35,8 @@ fn describe(df :: frame.DataFrame) -> frame.DataFrame {
   let data_cols := list.map(numeric_cols, fn (name :: Str) -> (Str, List[val.Value]) {
     match map.get(df.columns, name) {
       None => (name, [val.vnull(), val.vnull(), val.vnull(), val.vnull(), val.vnull()]),
-      Some(xs) => {
-        let tmp := match frame.from_columns([(name, xs)]) {
+      Some(c) => {
+        let tmp := match frame.from_typed_columns([(name, c)]) {
           Ok(d) => d,
           Err(_) => frame.empty(),
         }
@@ -69,7 +72,8 @@ fn correlation(df :: frame.DataFrame, col1 :: Str, col2 :: Str) -> Option[Float]
   match (map.get(df.columns, col1), map.get(df.columns, col2)) {
     (None, _) => None,
     (_, None) => None,
-    (Some(xs), Some(ys)) => {
+    (Some(cx), Some(cy)) => {
+      let xs := col.col_to_values(cx)
       let en := list.enumerate(xs)
       let numeric_en := list.filter(en, fn (p :: (Int, val.Value)) -> Bool {
         let i := match p {
@@ -80,7 +84,7 @@ fn correlation(df :: frame.DataFrame, col1 :: Str, col2 :: Str) -> Option[Float]
         }
         match val.as_float(xv) {
           None => false,
-          Some(_) => match val.as_float(frame.nth_value(ys, i)) {
+          Some(_) => match val.as_float(col.col_nth(cy, i)) {
             None => false,
             Some(_) => true,
           },
@@ -104,7 +108,7 @@ fn correlation(df :: frame.DataFrame, col1 :: Str, col2 :: Str) -> Option[Float]
           let i := match p {
             (idx, _) => idx,
           }
-          match val.as_float(frame.nth_value(ys, i)) {
+          match val.as_float(col.col_nth(cy, i)) {
             Some(y) => a + y,
             None => a,
           }
@@ -120,7 +124,7 @@ fn correlation(df :: frame.DataFrame, col1 :: Str, col2 :: Str) -> Option[Float]
             Some(v) => v,
             None => 0.0,
           }
-          let y := match val.as_float(frame.nth_value(ys, i)) {
+          let y := match val.as_float(col.col_nth(cy, i)) {
             Some(v) => v,
             None => 0.0,
           }
@@ -140,7 +144,7 @@ fn correlation(df :: frame.DataFrame, col1 :: Str, col2 :: Str) -> Option[Float]
           let i := match p {
             (idx, _) => idx,
           }
-          let y := match val.as_float(frame.nth_value(ys, i)) {
+          let y := match val.as_float(col.col_nth(cy, i)) {
             Some(v) => v,
             None => 0.0,
           }
@@ -166,9 +170,7 @@ fn null_counts(df :: frame.DataFrame) -> frame.DataFrame {
   let count_vals := list.map(df.col_names, fn (nm :: Str) -> val.Value {
     match map.get(df.columns, nm) {
       None => val.vnull(),
-      Some(xs) => val.vint(list.len(list.filter(xs, fn (v :: val.Value) -> Bool {
-        val.is_null(v)
-      }))),
+      Some(c) => val.vint(col.col_null_count(c)),
     }
   })
   let pct_vals := list.map(count_vals, fn (v :: val.Value) -> val.Value {

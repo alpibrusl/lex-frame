@@ -6,16 +6,18 @@ import "std.map" as map
 
 import "./value" as val
 
+import "./col" as col
+
 import "./frame" as frame
 
 import "./provenance" as prov
 
-fn row_get_or_null(row :: List[(Str, val.Value)], col :: Str) -> val.Value {
+fn row_get_or_null(row :: List[(Str, val.Value)], name :: Str) -> val.Value {
   match list.fold(row, None, fn (acc :: Option[(Str, val.Value)], pair :: (Str, val.Value)) -> Option[(Str, val.Value)] {
     match acc {
       Some(_) => acc,
       None => if match pair {
-        (k, _) => k == col,
+        (k, _) => k == name,
       } {
         Some(pair)
       } else {
@@ -30,12 +32,12 @@ fn row_get_or_null(row :: List[(Str, val.Value)], col :: Str) -> val.Value {
   }
 }
 
-fn row_get(row :: List[(Str, val.Value)], col :: Str) -> Option[val.Value] {
+fn row_get(row :: List[(Str, val.Value)], name :: Str) -> Option[val.Value] {
   match list.fold(row, None, fn (acc :: Option[(Str, val.Value)], pair :: (Str, val.Value)) -> Option[(Str, val.Value)] {
     match acc {
       Some(_) => acc,
       None => if match pair {
-        (k, _) => k == col,
+        (k, _) => k == name,
       } {
         Some(pair)
       } else {
@@ -57,15 +59,10 @@ fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataF
     })
   })
   if list.is_empty(missing) {
-    let new_cols := list.map(wanted, fn (name :: Str) -> (Str, List[val.Value]) {
-      (name, match map.get(df.columns, name) {
-        Some(c) => c,
-        None => [],
-      })
-    })
-    let new_map := list.fold(new_cols, map.new(), fn (acc :: Map[Str, List[val.Value]], pair :: (Str, List[val.Value])) -> Map[Str, List[val.Value]] {
-      match pair {
-        (name, c) => map.set(acc, name, c),
+    let new_map := list.fold(wanted, map.new(), fn (acc :: Map[Str, col.Col], name :: Str) -> Map[Str, col.Col] {
+      match map.get(df.columns, name) {
+        None => acc,
+        Some(c) => map.set(acc, name, c),
       }
     })
     Ok({ col_names: wanted, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_select(wanted), df.provenance) })
@@ -88,9 +85,10 @@ fn drop_cols(df :: frame.DataFrame, to_drop :: List[Str]) -> Result[frame.DataFr
 }
 
 fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
-  if list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool {
+  let missing := list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool {
     acc and n != old_name
-  }) {
+  })
+  if missing {
     Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND", str.concat("column '", str.concat(old_name, "' not found")), old_name))
   } else {
     let new_names := list.map(df.col_names, fn (n :: Str) -> Str {
@@ -102,7 +100,7 @@ fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result
     })
     let old_col := match map.get(df.columns, old_name) {
       Some(c) => c,
-      None => [],
+      None => col.col_str([]),
     }
     let new_map := map.set(df.columns, new_name, old_col)
     Ok({ col_names: new_names, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_rename(old_name, new_name), df.provenance) })
@@ -118,9 +116,9 @@ fn filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, val.
 }
 
 fn with_column(df :: frame.DataFrame, name :: Str, derive :: (List[(Str, val.Value)]) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {
-  let new_col := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> val.Value {
+  let new_vals := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> val.Value {
     derive(frame.get_row(df, i))
   })
-  frame.add_column(df, name, new_col)
+  frame.add_column(df, name, new_vals)
 }
 

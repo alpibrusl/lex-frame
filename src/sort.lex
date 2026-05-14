@@ -2,40 +2,39 @@ import "std.list" as list
 
 import "std.map" as map
 
-import "std.str" as str
-
 import "./value" as val
+
+import "./col" as col
 
 import "./frame" as frame
 
 import "./provenance" as prov
 
-fn sort_by(df :: frame.DataFrame, col :: Str, asc :: Bool) -> frame.DataFrame {
-  match map.get(df.columns, col) {
+fn sort_by(df :: frame.DataFrame, col_name :: Str, asc :: Bool) -> frame.DataFrame {
+  match map.get(df.columns, col_name) {
     None => df,
-    Some(key_col) => {
-      let indexed := list.enumerate(key_col)
-      let sorted_pairs := merge_sort(indexed, asc)
-      let indices := list.map(sorted_pairs, fn (p :: (Int, val.Value)) -> Int {
+    Some(c) => {
+      let key_vals := col.col_to_values(c)
+      let indexed := list.enumerate(key_vals)
+      let sorted := merge_sort(indexed, asc)
+      let indices := list.map(sorted, fn (p :: (Int, val.Value)) -> Int {
         match p {
           (i, _) => i,
         }
       })
       let sub := frame.pick_rows(df, indices)
-      frame.record_op(sub, prov.op_sort(col, asc))
+      frame.record_op(sub, prov.op_sort(col_name, asc))
     },
   }
 }
 
 fn sort_by_cols(df :: frame.DataFrame, specs :: List[(Str, Bool)]) -> frame.DataFrame {
   list.fold(list.reverse(specs), df, fn (acc :: frame.DataFrame, spec :: (Str, Bool)) -> frame.DataFrame {
-    let col := match spec {
+    sort_by(acc, match spec {
       (a, _) => a,
-    }
-    let asc := match spec {
+    }, match spec {
       (_, b) => b,
-    }
-    sort_by(acc, col, asc)
+    })
   })
 }
 

@@ -10,6 +10,8 @@ import "std.float" as float
 
 import "./value" as val
 
+import "./col" as col
+
 import "./frame" as frame
 
 import "./agg" as agg
@@ -22,48 +24,10 @@ fn infer_dtypes(df :: frame.DataFrame) -> List[(Str, Str)] {
   list.map(df.col_names, fn (name :: Str) -> (Str, Str) {
     let dtype := match map.get(df.columns, name) {
       None => "unknown",
-      Some(xs) => dominant_type(xs),
+      Some(c) => col.col_type_name(c),
     }
     (name, dtype)
   })
-}
-
-fn dominant_type(col :: List[val.Value]) -> Str {
-  let non_null := list.filter(col, fn (v :: val.Value) -> Bool {
-    if val.is_null(v) {
-      false
-    } else {
-      true
-    }
-  })
-  if list.is_empty(non_null) {
-    "null"
-  } else {
-    let counts := list.fold(non_null, map.new(), fn (m :: Map[Str, Int], v :: val.Value) -> Map[Str, Int] {
-      let t := val.type_name(v)
-      let c := match map.get(m, t) {
-        Some(n) => n,
-        None => 0,
-      }
-      map.set(m, t, c + 1)
-    })
-    list.fold(map.entries(counts), "unknown", fn (best :: Str, pair :: (Str, Int)) -> Str {
-      let t := match pair {
-        (a, _) => a,
-      }
-      let c := match pair {
-        (_, b) => b,
-      }
-      match map.get(counts, best) {
-        None => t,
-        Some(bc) => if c > bc {
-          t
-        } else {
-          best
-        },
-      }
-    })
-  }
 }
 
 fn summary(df :: frame.DataFrame) -> Str {
@@ -80,9 +44,7 @@ fn summary(df :: frame.DataFrame) -> Str {
     }
     let nulls := match map.get(df.columns, name) {
       None => 0,
-      Some(xs) => list.len(list.filter(xs, fn (v :: val.Value) -> Bool {
-        val.is_null(v)
-      })),
+      Some(c) => col.col_null_count(c),
     }
     str.concat("  ", str.concat(name, str.concat(" (", str.concat(dtype, str.concat(") null=", int.to_str(nulls))))))
   }), "\n")
@@ -105,7 +67,7 @@ fn to_markdown(df :: frame.DataFrame, max_rows :: Int) -> Str {
     let vals := list.map(cols, fn (name :: Str) -> Str {
       match map.get(df.columns, name) {
         None => "null",
-        Some(col) => val.to_str(frame.nth_value(col, i)),
+        Some(c) => val.to_str(frame.nth_value(c, i)),
       }
     })
     str.concat("| ", str.concat(str.join(vals, " | "), " |"))
@@ -134,7 +96,7 @@ fn to_json_payload(df :: frame.DataFrame, max_rows :: Int) -> Str {
     let pairs := list.map(df.col_names, fn (name :: Str) -> Str {
       let v := match map.get(df.columns, name) {
         None => val.vnull(),
-        Some(col) => frame.nth_value(col, i),
+        Some(c) => frame.nth_value(c, i),
       }
       str.concat("\"", str.concat(name, str.concat("\": ", json_val(v))))
     })
@@ -156,37 +118,35 @@ fn json_val(v :: val.Value) -> Str {
   }
 }
 
-fn column_profile(df :: frame.DataFrame, col :: Str) -> Str {
-  match map.get(df.columns, col) {
+fn column_profile(df :: frame.DataFrame, column :: Str) -> Str {
+  match map.get(df.columns, column) {
     None => "",
-    Some(xs) => {
-      let tmp := match frame.from_columns([(col, xs)]) {
+    Some(c) => {
+      let tmp := match frame.from_typed_columns([(column, c)]) {
         Ok(d) => d,
         Err(_) => frame.empty(),
       }
-      let dtype := dominant_type(xs)
-      let n := list.len(xs)
-      let null_cnt := list.len(list.filter(xs, fn (v :: val.Value) -> Bool {
-        val.is_null(v)
-      }))
+      let dtype := col.col_type_name(c)
+      let n := col.col_len(c)
+      let null_cnt := col.col_null_count(c)
       let non_null := n - null_cnt
-      let distinct := agg.n_distinct(tmp, col)
-      let base := str.join([str.concat("column:   ", col), str.concat("dtype:    ", dtype), str.concat("count:    ", int.to_str(n)), str.concat("non-null: ", int.to_str(non_null)), str.concat("null:     ", int.to_str(null_cnt)), str.concat("distinct: ", int.to_str(distinct))], "\n")
-      let is_numeric := dtype == "Int" or dtype == "Float"
+      let distinct := agg.n_distinct(tmp, column)
+      let base := str.join([str.concat("column:   ", column), str.concat("dtype:    ", dtype), str.concat("count:    ", int.to_str(n)), str.concat("non-null: ", int.to_str(non_null)), str.concat("null:     ", int.to_str(null_cnt)), str.concat("distinct: ", int.to_str(distinct))], "\n")
+      let is_numeric := dtype == "Int" or dtype == "Float" or dtype == "Int?" or dtype == "Float?"
       let numeric_s := if is_numeric {
-        let mean_s := match agg.mean_col(tmp, col) {
+        let mean_s := match agg.mean_col(tmp, column) {
           Some(x) => float.to_str(x),
           None => "n/a",
         }
-        let std_s := match agg.std_col(tmp, col) {
+        let std_s := match agg.std_col(tmp, column) {
           Some(x) => float.to_str(x),
           None => "n/a",
         }
-        let min_s := match agg.min_col(tmp, col) {
+        let min_s := match agg.min_col(tmp, column) {
           Some(v) => val.to_str(v),
           None => "n/a",
         }
-        let max_s := match agg.max_col(tmp, col) {
+        let max_s := match agg.max_col(tmp, column) {
           Some(v) => val.to_str(v),
           None => "n/a",
         }
@@ -236,9 +196,7 @@ fn null_report(df :: frame.DataFrame) -> frame.DataFrame {
   let count_vals := list.map(df.col_names, fn (nm :: Str) -> val.Value {
     match map.get(df.columns, nm) {
       None => val.vnull(),
-      Some(xs) => val.vint(list.len(list.filter(xs, fn (v :: val.Value) -> Bool {
-        val.is_null(v)
-      }))),
+      Some(c) => val.vint(col.col_null_count(c)),
     }
   })
   let pct_vals := list.map(count_vals, fn (v :: val.Value) -> val.Value {
