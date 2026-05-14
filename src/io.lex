@@ -38,24 +38,49 @@ fn parse_csv(content :: Str) -> Result[frame.DataFrame, frame.FrameError] {
         })
         let data_rows := list.tail(lines)
         let n_cols := list.len(headers)
-        let parsed_rows := list.map(data_rows, fn (line :: Str) -> List[val.Value] {
-          let raw_vals := str.split(line, ",")
-          let padded := pad_or_trim(raw_vals, n_cols)
-          list.map(padded, fn (s :: Str) -> val.Value {
-            val.parse_str(s)
-          })
-        })
-        let cols := list.map(list.enumerate(headers), fn (p :: (Int, Str)) -> (Str, List[val.Value]) {
-          let col_idx := match p {
+        let header_idx := list.fold(list.enumerate(headers), map.new(), fn (m :: Map[Str, Str], p :: (Int, Str)) -> Map[Str, Str] {
+          let i := match p {
             (a, _) => a,
           }
-          let col_name := match p {
+          let name := match p {
             (_, b) => b,
           }
-          let col_vals := list.map(parsed_rows, fn (row :: List[val.Value]) -> val.Value {
-            nth_val_list(row, col_idx)
+          map.set(m, int.to_str(i), name)
+        })
+        let init_acc := list.fold(headers, map.new(), fn (m :: Map[Str, List[val.Value]], name :: Str) -> Map[Str, List[val.Value]] {
+          map.set(m, name, [])
+        })
+        let reversed_cols := list.fold(data_rows, init_acc, fn (col_acc :: Map[Str, List[val.Value]], line :: Str) -> Map[Str, List[val.Value]] {
+          let raw_vals := str.split(line, ",")
+          let padded := pad_or_trim(raw_vals, n_cols)
+          let parsed := list.map(padded, fn (s :: Str) -> val.Value {
+            val.parse_str(s)
           })
-          (col_name, col_vals)
+          list.fold(list.enumerate(parsed), col_acc, fn (m :: Map[Str, List[val.Value]], p :: (Int, val.Value)) -> Map[Str, List[val.Value]] {
+            let idx := match p {
+              (a, _) => a,
+            }
+            let v := match p {
+              (_, b) => b,
+            }
+            match map.get(header_idx, int.to_str(idx)) {
+              None => m,
+              Some(name) => {
+                let existing := match map.get(m, name) {
+                  Some(xs) => xs,
+                  None => [],
+                }
+                map.set(m, name, list.cons(v, existing))
+              },
+            }
+          })
+        })
+        let cols := list.map(headers, fn (name :: Str) -> (Str, List[val.Value]) {
+          let vals := match map.get(reversed_cols, name) {
+            Some(xs) => list.reverse(xs),
+            None => [],
+          }
+          (name, vals)
         })
         match frame.from_columns(cols) {
           Err(e) => Err(e),
@@ -158,22 +183,6 @@ fn json_escape(s :: Str) -> Str {
       _ => c,
     })
   })
-}
-
-fn nth_val_list(xs :: List[val.Value], i :: Int) -> val.Value {
-  let m := list.fold(list.enumerate(xs), map.new(), fn (acc :: Map[Str, val.Value], p :: (Int, val.Value)) -> Map[Str, val.Value] {
-    let idx := match p {
-      (a, _) => a,
-    }
-    let v := match p {
-      (_, b) => b,
-    }
-    map.set(acc, int.to_str(idx), v)
-  })
-  match map.get(m, int.to_str(i)) {
-    Some(v) => v,
-    None => val.vnull(),
-  }
 }
 
 fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {
