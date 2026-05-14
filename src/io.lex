@@ -168,9 +168,9 @@ fn nth_val_list(xs :: List[val.Value], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(v) => v,
     None => val.vnull(),
   }

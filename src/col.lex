@@ -103,9 +103,9 @@ fn nth_int(xs :: List[Int], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(v) => val.vint(v),
     None => val.vnull(),
   }
@@ -119,9 +119,9 @@ fn nth_float(xs :: List[Float], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(v) => val.vfloat(v),
     None => val.vnull(),
   }
@@ -135,9 +135,9 @@ fn nth_str(xs :: List[Str], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(v) => val.vstr(v),
     None => val.vnull(),
   }
@@ -151,9 +151,9 @@ fn nth_bool(xs :: List[Bool], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(v) => val.vbool(v),
     None => val.vnull(),
   }
@@ -167,9 +167,9 @@ fn nth_opt_int(xs :: List[Option[Int]], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     None => val.vnull(),
     Some(opt) => match opt {
       None => val.vnull(),
@@ -186,9 +186,9 @@ fn nth_opt_float(xs :: List[Option[Float]], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     None => val.vnull(),
     Some(opt) => match opt {
       None => val.vnull(),
@@ -205,9 +205,9 @@ fn nth_opt_str(xs :: List[Option[Str]], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     None => val.vnull(),
     Some(opt) => match opt {
       None => val.vnull(),
@@ -224,9 +224,9 @@ fn nth_opt_bool(xs :: List[Option[Bool]], i :: Int) -> val.Value {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     None => val.vnull(),
     Some(opt) => match opt {
       None => val.vnull(),
@@ -587,9 +587,9 @@ fn nth_bool_list(xs :: List[Bool], i :: Int) -> Bool {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(idx), v)
+    map.set(acc, int.to_str(idx), v)
   })
-  match map.get(m, str.from_int(i)) {
+  match map.get(m, int.to_str(i)) {
     Some(b) => b,
     None => false,
   }
@@ -616,10 +616,10 @@ fn pick_int_list(xs :: List[Int], indices :: List[Int]) -> List[Int] {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Int], i :: Int) -> List[Int] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => acc,
     }
@@ -634,10 +634,10 @@ fn pick_float_list(xs :: List[Float], indices :: List[Int]) -> List[Float] {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Float], i :: Int) -> List[Float] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => acc,
     }
@@ -652,10 +652,10 @@ fn pick_str_list(xs :: List[Str], indices :: List[Int]) -> List[Str] {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Str], i :: Int) -> List[Str] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => acc,
     }
@@ -670,10 +670,10 @@ fn pick_bool_list(xs :: List[Bool], indices :: List[Int]) -> List[Bool] {
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Bool], i :: Int) -> List[Bool] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => acc,
     }
@@ -688,10 +688,10 @@ fn pick_opt_int_list(xs :: List[Option[Int]], indices :: List[Int]) -> List[Opti
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Option[Int]], i :: Int) -> List[Option[Int]] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => list.cons(None, acc),
     }
@@ -706,10 +706,10 @@ fn pick_opt_float_list(xs :: List[Option[Float]], indices :: List[Int]) -> List[
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Option[Float]], i :: Int) -> List[Option[Float]] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => list.cons(None, acc),
     }
@@ -724,10 +724,10 @@ fn pick_opt_str_list(xs :: List[Option[Str]], indices :: List[Int]) -> List[Opti
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Option[Str]], i :: Int) -> List[Option[Str]] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => list.cons(None, acc),
     }
@@ -742,10 +742,10 @@ fn pick_opt_bool_list(xs :: List[Option[Bool]], indices :: List[Int]) -> List[Op
     let v := match p {
       (_, b) => b,
     }
-    map.set(acc, str.from_int(i), v)
+    map.set(acc, int.to_str(i), v)
   })
   list.reverse(list.fold(indices, [], fn (acc :: List[Option[Bool]], i :: Int) -> List[Option[Bool]] {
-    match map.get(m, str.from_int(i)) {
+    match map.get(m, int.to_str(i)) {
       Some(v) => list.cons(v, acc),
       None => list.cons(None, acc),
     }
@@ -1292,10 +1292,10 @@ fn col_std(c :: Col) -> Option[Float] {
 fn col_n_distinct(c :: Col) -> Int {
   match c {
     IntCol(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], x :: Int) -> Map[Str, Bool] {
-      map.set(m, str.from_int(x), true)
+      map.set(m, int.to_str(x), true)
     }))),
     FloatCol(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], x :: Float) -> Map[Str, Bool] {
-      map.set(m, str.from_float(x), true)
+      map.set(m, float.to_str(x), true)
     }))),
     StrCol(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], x :: Str) -> Map[Str, Bool] {
       map.set(m, x, true)
@@ -1310,13 +1310,13 @@ fn col_n_distinct(c :: Col) -> Int {
     NullableInt(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], o :: Option[Int]) -> Map[Str, Bool] {
       match o {
         None => map.set(m, "null", true),
-        Some(x) => map.set(m, str.from_int(x), true),
+        Some(x) => map.set(m, int.to_str(x), true),
       }
     }))),
     NullableFloat(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], o :: Option[Float]) -> Map[Str, Bool] {
       match o {
         None => map.set(m, "null", true),
-        Some(x) => map.set(m, str.from_float(x), true),
+        Some(x) => map.set(m, float.to_str(x), true),
       }
     }))),
     NullableStr(xs) => list.len(map.entries(list.fold(xs, map.new(), fn (m :: Map[Str, Bool], o :: Option[Str]) -> Map[Str, Bool] {
