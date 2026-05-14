@@ -1,0 +1,18 @@
+[package]
+name = "lex-frame"
+version = "0.1.0"
+description = "AI-agent-first column-oriented dataframe library for Lex. Immutable, effect-declared, provenance-tracked, with LLM-friendly inspection helpers."
+
+[dependencies]
+value      = { path = "./src/value.lex" }
+frame      = { path = "./src/frame.lex" }
+select     = { path = "./src/select.lex" }
+agg        = { path = "./src/agg.lex" }
+group      = { path = "./src/group.lex" }
+join       = { path = "./src/join.lex" }
+sort       = { path = "./src/sort.lex" }
+io         = { path = "./src/io.lex" }
+stats      = { path = "./src/stats.lex" }
+inspect    = { path = "./src/inspect.lex" }
+provenance = { path = "./src/provenance.lex" }
+dist       = { path = "./src/dist.lex" }
