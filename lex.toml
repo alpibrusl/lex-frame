@@ -5,6 +5,7 @@ description = "AI-agent-first column-oriented dataframe library for Lex. Immutab
 
 [dependencies]
 value      = { path = "./src/value.lex" }
+col        = { path = "./src/col.lex" }
 frame      = { path = "./src/frame.lex" }
 select     = { path = "./src/select.lex" }
 agg        = { path = "./src/agg.lex" }
