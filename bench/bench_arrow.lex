@@ -66,6 +66,8 @@ fn arrow_min_x(n :: Int) -> Int {
 # Amortised sum: build once, reduce k times. Demonstrates that the
 # kernel itself is essentially free — when input is already columnar,
 # repeated reductions don't cost extra wall-clock.
+#
+# Returns k * sum(1..n) = k * n*(n+1)/2 — e.g. n=1000, k=100 → 50_050_000.
 fn arrow_sum_repeat_loop(t :: Table, k :: Int, acc :: Int) -> Int {
   if k == 0 {
     acc

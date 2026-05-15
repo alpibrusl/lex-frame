@@ -3,19 +3,22 @@
 # wall time including process startup, CSV parse, schema inference,
 # query execution, and Lex result-shaping.
 #
-# Numbers vs pandas 3.0.3 (read_csv + op, both end-to-end):
+# Target shape (projections from development against the lex-lang #428
+# branch — to be re-measured against released 0.9.4 once a bench harness
+# lands; numbers below are NOT yet a verified claim):
 #
-#   n         op                 lex          pandas        ratio
-#   100 000   group_by_agg       37 ms        36 ms         within 3%
-#   100 000   sort_by            40 ms        37 ms         within 8%
-#   100 000   filter_gt          34 ms        31 ms         within 10%
-#   1 000 000 group_by_agg       231 ms       285 ms        lex 1.2x faster
-#   1 000 000 sort_by            285 ms       331 ms        lex 1.2x faster
-#   1 000 000 filter_gt          239 ms       276 ms        lex 1.2x faster
+#   n         op                 lex (target) pandas 3.0.3  ratio
+#   100 000   group_by_agg       ~ 37 ms      36 ms         within 3%
+#   100 000   sort_by            ~ 40 ms      37 ms         within 8%
+#   100 000   filter_gt          ~ 34 ms      31 ms         within 10%
+#   1 000 000 group_by_agg       ~231 ms      285 ms        lex ~1.2x
+#   1 000 000 sort_by            ~285 ms      331 ms        lex ~1.2x
+#   1 000 000 filter_gt          ~239 ms      276 ms        lex ~1.2x
 #
 # Requires lex ≥ 0.9.4 (std.arrow + std.df, both shipped in lex-lang
 # #428). The full lex-frame migration (#6) rewires every public op
-# to this path automatically; this file is the in-source proof point.
+# to this path automatically; this file is the in-source proof point
+# once the migration lands.
 
 import "std.list"  as list
 import "std.arrow" as arrow
@@ -48,7 +51,9 @@ fn sort_csv(path :: Str) -> [fs_read] Int {
   }
 }
 
-# Read CSV, filter rows where x > threshold.
+# Read CSV, filter rows where x > threshold. Apples-to-apples with
+# pandas_df_ref.py requires the harness pass `threshold = n // 2`
+# (half the rows kept), matching the pandas side's hardcoded `n // 2`.
 fn filter_gt_csv(path :: Str, threshold :: Int) -> [fs_read] Int {
   match arrow.read_csv(path) {
     Err(_) => -1,

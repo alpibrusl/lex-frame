@@ -38,6 +38,9 @@ def main() -> None:
 
         def group_by_csv() -> int:
             df = pd.read_csv(path)
+            # len(groupby.agg(...)) returns the number of GROUPS (10), not
+            # row count — matches what `arrow.nrows(out)` returns on the
+            # lex side, so cell-by-cell comparison is fair.
             return len(df.groupby("g").agg(sum_x=("x", "sum"), mean_y=("y", "mean")))
 
         def sort_csv() -> int:
