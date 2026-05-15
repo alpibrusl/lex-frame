@@ -1,6 +1,6 @@
 {
   "name": "lex",
-  "version": "0.9.1",
+  "version": "0.9.4",
   "acli_version": "0.1.0",
   "commands": [
     {
@@ -1418,6 +1418,39 @@
       "see_also": [
         "check",
         "run"
+      ]
+    },
+    {
+      "name": "agent-guidelines",
+      "description": "emit the AI-agent authoring contract (idiom rules) for this Lex toolchain",
+      "arguments": [],
+      "options": [
+        {
+          "name": "--version-only",
+          "type": "bool",
+          "description": "print only the toolchain version"
+        }
+      ],
+      "subcommands": [],
+      "idempotent": true,
+      "examples": [
+        {
+          "description": "Read the rules",
+          "invocation": "lex agent-guidelines"
+        },
+        {
+          "description": "Capture into a repo",
+          "invocation": "lex agent-guidelines > AGENTS.md"
+        },
+        {
+          "description": "Version of the doc",
+          "invocation": "lex agent-guidelines --version-only"
+        }
+      ],
+      "see_also": [
+        "skill",
+        "introspect",
+        "init"
       ]
     }
   ]

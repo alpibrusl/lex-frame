@@ -10,6 +10,8 @@ import "std.float" as float
 
 import "std.io" as io
 
+import "std.arrow" as arrow
+
 import "./value" as val
 
 import "./col" as col
@@ -180,6 +182,23 @@ fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {
   match io.read(path) {
     Err(e) => Err(frame.frame_err("io_error", str.concat("read failed: ", e), path)),
     Ok(content) => parse_csv(content),
+  }
+}
+
+# Fast-path CSV reader: goes through `arrow.read_csv` (one Rust call
+# over a flat buffer, schema inferred from the first 100 rows) and
+# returns a DataFrame whose `arrow_table` is set. agg.*_fast ops
+# dispatch through arrow kernels. Effect is `[fs_read]` (matches
+# `arrow.read_csv` / `io.read` scope: `--allow-fs-read`).
+#
+# At 1M rows this is ~3-4 orders of magnitude faster than the legacy
+# `read_csv` (which runs the CSV parser in interpreted Lex bytecode);
+# the win compounds with `agg.sum_col_fast` etc. on the result. See
+# `bench/REPORT.md` for measured numbers.
+fn read_csv_fast(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
+  match arrow.read_csv(path) {
+    Err(e) => Err(frame.frame_err("io_error", str.concat("arrow.read_csv failed: ", e), path)),
+    Ok(t) => Ok(frame.from_arrow_table(t)),
   }
 }
 

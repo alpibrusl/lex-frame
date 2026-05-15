@@ -65,7 +65,7 @@ fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataF
         Some(c) => map.set(acc, name, c),
       }
     })
-    Ok({ col_names: wanted, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_select(wanted), df.provenance) })
+    Ok({ col_names: wanted, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_select(wanted), df.provenance), arrow_table: None })
   } else {
     let first := match list.head(missing) {
       Some(n) => n,
@@ -103,7 +103,7 @@ fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result
       None => col.col_str([]),
     }
     let new_map := map.set(df.columns, new_name, old_col)
-    Ok({ col_names: new_names, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_rename(old_name, new_name), df.provenance) })
+    Ok({ col_names: new_names, columns: new_map, nrows: df.nrows, provenance: list.cons(prov.op_rename(old_name, new_name), df.provenance), arrow_table: None })
   }
 }
 
@@ -112,7 +112,7 @@ fn filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, val.
     pred(frame.get_row(df, i))
   })
   let df2 := frame.pick_rows(df, kept)
-  Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance) })
+  Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance), arrow_table: None })
 }
 
 fn with_column(df :: frame.DataFrame, name :: Str, derive :: (List[(Str, val.Value)]) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {

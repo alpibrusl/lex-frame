@@ -1,6 +1,6 @@
 # lex
 
-Version: 0.9.1
+Version: 0.9.4
 ACLI version: 0.1.0
 
 ## Commands
@@ -148,4 +148,10 @@ Idempotent: false
 re-run check or run on file save (agent inner loop)
 
 Idempotent: false
+
+### agent-guidelines
+
+emit the AI-agent authoring contract (idiom rules) for this Lex toolchain
+
+Idempotent: true
 
