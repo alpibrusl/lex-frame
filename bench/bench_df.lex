@@ -13,9 +13,9 @@
 #   1 000 000 sort_by            285 ms       331 ms        lex 1.2x faster
 #   1 000 000 filter_gt          239 ms       276 ms        lex 1.2x faster
 #
-# Requires lex with std.arrow + std.df (lex-lang #428 + #427). The
-# full lex-frame migration (#6) rewires every public op to this path
-# automatically; this file is the in-source proof point.
+# Requires lex ≥ 0.9.4 (std.arrow + std.df, both shipped in lex-lang
+# #428). The full lex-frame migration (#6) rewires every public op
+# to this path automatically; this file is the in-source proof point.
 
 import "std.list"  as list
 import "std.arrow" as arrow

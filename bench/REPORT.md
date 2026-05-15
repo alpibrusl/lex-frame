@@ -1,26 +1,5 @@
 # lex-frame performance — 0.9.2 vs 0.9.3 (Unreleased) A/B
 
-> **🎯 Path-1 complete: lex-frame matches or beats pandas on real
-> workloads.** With lex-lang #428 (`std.arrow`) and lex-lang #427
-> (`std.df`, Polars-backed), the same bench that used to run 1000–10 000×
-> slower than pandas now runs **within 10% of pandas at 100k rows and
-> 1.2× faster at 1M rows**. Bench file: `bench/bench_df.lex`; pandas
-> reference: `bench/pandas_df_ref.py`.
->
-> | op (read CSV + op) | n | lex (std.arrow + std.df) | pandas 3.0 | ratio |
-> |---|---:|---:|---:|---:|
-> | `group_by_agg` | 100 k | 37 ms |  36 ms | within 3% |
-> | `sort_by`      | 100 k | 40 ms |  37 ms | within 8% |
-> | `filter_gt`    | 100 k | 34 ms |  31 ms | within 10% |
-> | `group_by_agg` |   1 M | 231 ms | 285 ms | **lex 1.2× faster** |
-> | `sort_by`      |   1 M | 285 ms | 331 ms | **lex 1.2× faster** |
-> | `filter_gt`    |   1 M | 239 ms | 276 ms | **lex 1.2× faster** |
->
-> The full lex-frame migration (#6) is the last piece — once `lex` 0.9.4
-> ships, every public `lex-frame` op gets these numbers automatically;
-> the agent-facing surface (immutability, typed errors, provenance,
-> LLM-shaped output) is unchanged.
-
 This file records a head-to-head run of `lex-frame` against two builds of
 the `lex` runtime, on identical source code and identical input sizes.
 
@@ -190,12 +169,12 @@ same output, 48–63× less wall time:
 
 The Arrow kernel itself is essentially free — the
 `arrow_sum_repeat (n=1000, k=100)` run takes the same wall time as
-`(n=1000, k=1)`, so the build cost dominates. Once `arrow.read_csv`
-lands (deferred slice of #426) and rows arrive already-columnar, the
-ratio compounds further. Reproduce locally:
+`(n=1000, k=1)`, so the build cost dominates. `arrow.read_csv` shipped
+alongside the kernels in #428, so once rows arrive already-columnar
+(via `bench_df.lex` / a future `frame.read_csv` wrapper), the ratio
+compounds further. Reproduce locally (requires `lex` ≥ 0.9.4):
 
 ```bash
-# Requires lex from the lex-lang #428 branch (until 0.9.4 ships):
 lex run --max-steps 1000000000 bench/bench.lex      bench_sum_x 1000
 lex run --max-steps 1000000000 bench/bench_arrow.lex arrow_sum_x 1000
 ```

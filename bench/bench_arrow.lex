@@ -1,5 +1,5 @@
 # Same workload as bench/bench.lex, but the column reductions go through
-# std.arrow (lex-lang #426 slice 1) instead of agg.sum_col / agg.mean_col.
+# std.arrow (lex-lang #428) instead of agg.sum_col / agg.mean_col.
 #
 # Build is still List[Value] (the lex-frame migration in lex-frame#6
 # rewires from_columns to land directly into Arrow); only the reductions
@@ -9,7 +9,6 @@
 # the kernel itself contributes once we eliminate the construction cost.
 
 import "std.list" as list
-import "std.int" as int
 import "std.arrow" as arrow
 
 # [1, 2, ..., n] via prepend.
@@ -39,7 +38,10 @@ fn arrow_sum_x(n :: Int) -> Int {
   }
 }
 
-# Mean x via the Arrow kernel.
+# Mean x via the Arrow kernel. Returns 1/0 as a success bit (matches
+# the bench.lex#bench_mean_x convention — we want the kernel's wall
+# time, not the Float result, which Int-returning bench harnesses
+# can't compare anyway).
 fn arrow_mean_x(n :: Int) -> Int {
   match make_table(n) {
     Err(_) => -1,
