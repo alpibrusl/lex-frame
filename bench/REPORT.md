@@ -1,5 +1,15 @@
 # lex-frame performance — 0.9.2 vs 0.9.3 (Unreleased) A/B
 
+> **Update (Path-1, slice 1):** lex-lang #428 lands `std.arrow` — Apache
+> Arrow tables as a first-class `Value` with native column kernels. On
+> the same `sum` workload the new path is **48–63× faster** than the
+> existing lex-frame `agg.sum_col` path (see "Path-1 slice-1 win" below).
+> The full lex-frame migration to wrap `arrow.Table` (issue
+> [#6](https://github.com/alpibrusl/lex-frame/issues/6)) is gated on a
+> lex 0.9.4 release; the bench file
+> `bench/bench_arrow.lex` reproduces today's win against a locally-built
+> `lex` from the lex-lang branch.
+
 This file records a head-to-head run of `lex-frame` against two builds of
 the `lex` runtime, on identical source code and identical input sizes.
 
@@ -152,3 +162,33 @@ cp target/release/lex target/release/lex-new
 ./bench/runbench.sh ~/lex-lang/target/release/lex-new 3
 python3 bench/pandas_ref.py
 ```
+
+## Path-1 slice-1 win — `agg.sum_col` vs `arrow.col_sum_int`
+
+After lex-lang #428 landed `std.arrow` (Apache Arrow `RecordBatch` as a
+first-class `Value` + native column kernels), the same `sum-a-column`
+workload that today goes through `agg.sum_col` (which walks a
+`List[Value]` in Lex bytecode) can be re-routed through one
+`arrow_arith::aggregate::sum` call over a flat `i64` buffer. Same input,
+same output, 48–63× less wall time:
+
+| n | `bench_sum_x` (lex-frame `agg.sum_col`) | `arrow_sum_x` (Arrow kernel) | speed-up |
+|---:|---:|---:|---:|
+| 1 000 |    859 ms |  18 ms | **48×** |
+| 5 000 | 20 143 ms | 320 ms | **63×** |
+
+The Arrow kernel itself is essentially free — the
+`arrow_sum_repeat (n=1000, k=100)` run takes the same wall time as
+`(n=1000, k=1)`, so the build cost dominates. Once `arrow.read_csv`
+lands (deferred slice of #426) and rows arrive already-columnar, the
+ratio compounds further. Reproduce locally:
+
+```bash
+# Requires lex from the lex-lang #428 branch (until 0.9.4 ships):
+lex run --max-steps 1000000000 bench/bench.lex      bench_sum_x 1000
+lex run --max-steps 1000000000 bench/bench_arrow.lex arrow_sum_x 1000
+```
+
+Once the lex-frame migration (lex-frame#6) ships, **every** lex-frame
+column op gets this routing automatically — the public API stays the
+same, only the engine underneath changes.
