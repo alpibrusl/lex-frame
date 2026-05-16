@@ -26,7 +26,7 @@ fn par_apply_col(df :: frame.DataFrame, col_name :: Str, transform :: (val.Value
       let new_vals := list.map(vals, transform)
       let new_c := col.col_from_values(new_vals)
       let new_cols := map.set(df.columns, col_name, new_c)
-      let new_df := { col_names: df.col_names, columns: new_cols, nrows: df.nrows, provenance: df.provenance }
+      let new_df := { col_names: df.col_names, columns: new_cols, nrows: df.nrows, provenance: df.provenance, arrow_table: None }
       Ok(frame.record_op(new_df, prov.op_add_column(col_name)))
     },
   }
@@ -57,7 +57,7 @@ fn par_apply_all_cols(df :: frame.DataFrame, transform :: (Str, List[val.Value])
     }
     map.set(m, k, col.col_from_values(v))
   })
-  let new_df := { col_names: df.col_names, columns: new_cols, nrows: df.nrows, provenance: df.provenance }
+  let new_df := { col_names: df.col_names, columns: new_cols, nrows: df.nrows, provenance: df.provenance, arrow_table: None }
   frame.record_op(new_df, prov.op_pipe("par_apply_all_cols"))
 }
 
