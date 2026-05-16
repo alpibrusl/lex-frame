@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  LEX_VERSION: v0.9.2
+  LEX_VERSION: v0.9.4
 
 jobs:
   build:
@@ -25,6 +25,12 @@ jobs:
 
       - name: Install package dependencies
         run: lex pkg install
+
+      - name: Check bench files
+        run: |
+          lex check bench/bench.lex
+          lex check bench/bench_arrow.lex
+          lex check bench/bench_df.lex
 
       - name: Test
         run: lex test

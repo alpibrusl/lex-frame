@@ -152,3 +152,98 @@ cp target/release/lex target/release/lex-new
 ./bench/runbench.sh ~/lex-lang/target/release/lex-new 3
 python3 bench/pandas_ref.py
 ```
+
+## Path-1 slice-1 win — `agg.sum_col` vs `arrow.col_sum_int`
+
+After lex-lang #428 landed `std.arrow` (Apache Arrow `RecordBatch` as a
+first-class `Value` + native column kernels), the same `sum-a-column`
+workload that today goes through `agg.sum_col` (which walks a
+`List[Value]` in Lex bytecode) can be re-routed through one
+`arrow_arith::aggregate::sum` call over a flat `i64` buffer. Same input,
+same output, 48–63× less wall time:
+
+| n | `bench_sum_x` (lex-frame `agg.sum_col`) | `arrow_sum_x` (Arrow kernel) | speed-up |
+|---:|---:|---:|---:|
+| 1 000 |    859 ms |  18 ms | **48×** |
+| 5 000 | 20 143 ms | 320 ms | **63×** |
+
+The Arrow kernel itself is essentially free — the
+`arrow_sum_repeat (n=1000, k=100)` run takes the same wall time as
+`(n=1000, k=1)`, so the build cost dominates. `arrow.read_csv` shipped
+alongside the kernels in #428, so once rows arrive already-columnar
+(via `bench_df.lex` / a future `frame.read_csv` wrapper), the ratio
+compounds further. Reproduce locally (requires `lex` ≥ 0.9.4):
+
+```bash
+lex run --max-steps 1000000000 bench/bench.lex      bench_sum_x 1000
+lex run --max-steps 1000000000 bench/bench_arrow.lex arrow_sum_x 1000
+```
+
+Once the lex-frame migration (lex-frame#6) ships, **every** lex-frame
+column op gets this routing automatically — the public API stays the
+same, only the engine underneath changes.
+
+## Path-1 slice-2 win — pandas head-to-head via `std.df` (measured, lex 0.9.4)
+
+Slice-1 above showed the Arrow kernel itself is essentially free.
+Slice-2 measures the full end-to-end story: read a CSV, run one query
+op, return the result size — apples-to-apples with the same workload
+on pandas 3.0.3. Bench source: `bench/bench_df.lex`; pandas reference:
+`bench/pandas_df_ref.py`.
+
+Protocol: 7 invocations per cell, median ms reported, min/max in
+parentheses; lex runs are fresh-process (`lex run …` per invocation —
+includes parse, type-check, run); pandas runs are in-process after one
+warmup. Both sides read the CSV fresh on every call, so the CSV-parse
+cost is included on both sides. Machine: shared linux container, lex
+0.9.4 release binary, pandas 3.0.3.
+
+| op (read CSV + op) | n | lex 0.9.4 | pandas 3.0.3 | ratio |
+|---|---:|---:|---:|---:|
+| `group_by_csv`  | 100 k |  33 ms (32–34) |  36 ms (34–36) | within 8% |
+| `sort_csv`      | 100 k |  36 ms (35–37) |  33 ms (33–35) | within 9% |
+| `filter_gt_csv` | 100 k |  34 ms (32–35) |  29 ms (28–30) | pandas 17% faster |
+| `sum_x_csv`     | 100 k |  28 ms (27–30) |  26 ms (26–27) | within 6% |
+| `group_by_csv`  |   1 M | 215 ms (208–252) | 274 ms (269–281) | **lex 1.27× faster** |
+| `sort_csv`      |   1 M | 257 ms (246–316) | 327 ms (316–386) | **lex 1.27× faster** |
+| `filter_gt_csv` |   1 M | 226 ms (212–240) | 266 ms (261–273) | **lex 1.18× faster** |
+| `sum_x_csv`     |   1 M | 180 ms (179–194) | 256 ms (252–260) | **lex 1.42× faster** |
+
+**Reading this.** At 100 k rows the two are within 6–17% of each other —
+lex's fresh-process startup (~25 ms parse + type-check, included in
+every cell on the lex side) is a large fraction of the total at that
+size, so the comparison is harsh on lex. At 1 M rows, where the query
+itself dominates, **lex 0.9.4 beats pandas across all four ops** by
+1.18–1.42×. Both sides are using Arrow-backed columnar storage; the
+difference is that pandas pays a NumPy-block-manager round-trip for
+group-by/sort, while `std.df` keeps the data in Polars throughout.
+
+**Important caveat.** This is `arrow.read_csv` + `df.*` going through
+`std.df` directly. The public `lex-frame` API (`frame.from_columns`,
+`agg.sum_col`, `select.where`, etc.) **still routes through
+`List[Value]`** as of this release, so this table is a Polars-via-lex
+claim, not yet a lex-frame claim. The lex-frame wrapper migration is
+tracked in lex-frame#6; once it lands, every public op inherits these
+numbers automatically — same source, same agent-facing surface,
+columnar engine underneath.
+
+Reproduce locally (requires `lex` ≥ 0.9.4 and `pandas` ≥ 3.0):
+
+```bash
+# generate CSVs
+python3 -c "
+import csv
+for n,p in [(100_000,'/tmp/bench.csv'),(1_000_000,'/tmp/bench_1m.csv')]:
+    with open(p,'w') as f:
+        w=csv.writer(f); w.writerow(['x','y','g'])
+        for i in range(1,n+1): w.writerow([i,i,str(i%10)])"
+
+# lex side (fresh process each run)
+lex run --allow-effects fs_read bench/bench_df.lex group_by_csv  '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read bench/bench_df.lex sort_csv      '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read bench/bench_df.lex filter_gt_csv '"/tmp/bench_1m.csv"' 500000
+lex run --allow-effects fs_read bench/bench_df.lex sum_x_csv     '"/tmp/bench_1m.csv"'
+
+# pandas side
+python3 bench/pandas_df_ref.py
+```
