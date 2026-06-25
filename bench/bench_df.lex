@@ -25,20 +25,17 @@
 # to this path automatically; this file is the in-source proof point
 # once the migration lands.
 
-import "std.list"  as list
+import "std.list" as list
+
 import "std.arrow" as arrow
-import "std.df"    as df
+
+import "std.df" as df
 
 # Read CSV, group by 'g', sum(x) + mean(y).
 fn group_by_csv(path :: Str) -> [fs_read] Int {
   match arrow.read_csv(path) {
     Err(_) => -1,
-    Ok(t) => match df.group_by_agg(
-      t,
-      list.cons("g", []),
-      list.cons(("sum_x",  "x", "sum"),
-        list.cons(("mean_y", "y", "mean"), []))
-    ) {
+    Ok(t) => match df.group_by_agg(t, list.cons("g", []), list.cons(("sum_x", "x", "sum"), list.cons(("mean_y", "y", "mean"), []))) {
       Err(_) => -2,
       Ok(out) => arrow.nrows(out),
     },
@@ -79,3 +76,4 @@ fn sum_x_csv(path :: Str) -> [fs_read] Int {
     },
   }
 }
+
