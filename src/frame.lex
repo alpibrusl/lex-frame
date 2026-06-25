@@ -168,9 +168,6 @@ fn pick_rows(df :: DataFrame, indices :: List[Int]) -> DataFrame {
       Some(c) => map.set(acc, name, col.col_pick(c, indices)),
     }
   })
-  # pick_rows on an arrow-backed DataFrame invalidates the cached table —
-  # we'd have to take/concat through arrow_select to keep it in sync. v1
-  # drops the cache; agg.*_fast falls back to legacy after pick_rows.
   { col_names: df.col_names, columns: new_map, nrows: list.len(indices), provenance: df.provenance, arrow_table: None }
 }
 

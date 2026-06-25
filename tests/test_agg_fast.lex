@@ -1,6 +1,9 @@
 import "std.list" as list
+
 import "std.arrow" as arrow
+
 import "../src/frame" as frame
+
 import "../src/agg" as agg
 
 # Build an arrow-backed DataFrame via std.arrow directly, then exercise
@@ -89,6 +92,7 @@ fn test_count_non_null_fast() -> Int {
 # `tests/test_agg.lex` exercises the legacy path directly; this case
 # confirms that the _fast variant is API-compatible (same answer).
 import "../src/value" as val
+
 fn make_legacy_df() -> frame.DataFrame {
   let nums := list.cons(val.vint(10), list.cons(val.vint(20), list.cons(val.vint(30), list.cons(val.vint(40), []))))
   match frame.from_columns(list.cons(("nums", nums), [])) {
@@ -112,3 +116,4 @@ fn run_all() -> Unit {
   let __lex_discard := test_from_arrow_table_nrows() + test_from_arrow_table_col_names() + test_sum_col_fast() + test_mean_col_fast() + test_min_col_fast() + test_max_col_fast() + test_count_non_null_fast() + test_sum_col_fast_falls_back()
   ()
 }
+

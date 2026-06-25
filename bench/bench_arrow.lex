@@ -9,11 +9,16 @@
 # the kernel itself contributes once we eliminate the construction cost.
 
 import "std.list" as list
+
 import "std.arrow" as arrow
 
 # [1, 2, ..., n] via prepend.
 fn ints_loop(i :: Int, acc :: List[Int]) -> List[Int] {
-  if i == 0 { acc } else { ints_loop(i - 1, list.cons(i, acc)) }
+  if i == 0 {
+    acc
+  } else {
+    ints_loop(i - 1, list.cons(i, acc))
+  }
 }
 
 fn ints(n :: Int) -> List[Int] {
@@ -85,3 +90,4 @@ fn arrow_sum_repeat(n :: Int, k :: Int) -> Int {
     Ok(t) => arrow_sum_repeat_loop(t, k, 0),
   }
 }
+

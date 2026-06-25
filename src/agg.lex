@@ -22,7 +22,6 @@ fn get_col(df :: frame.DataFrame, name :: Str) -> Option[col.Col] {
 # 1k-1M rows. When `arrow_table` is `None`, we fall back to the
 # legacy `col.col_sum` / etc. path so the same fn name works in both
 # code shapes; callers don't have to branch.
-
 fn sum_col_fast(df :: frame.DataFrame, name :: Str) -> Option[Int] {
   match df.arrow_table {
     None => match sum_col(df, name) {

@@ -1,12 +1,19 @@
 import "std.list" as list
+
 import "std.str" as str
+
 import "std.int" as int
 
 import "../src/value" as val
+
 import "../src/frame" as frame
+
 import "../src/agg" as agg
+
 import "../src/select" as sel
+
 import "../src/group" as group
+
 import "../src/sort" as srt
 
 # Build [val.vint(1), val.vint(2), ..., val.vint(n)] by prepend.
@@ -30,7 +37,7 @@ fn build_str_loop(i :: Int, acc :: List[val.Value]) -> List[val.Value] {
   if i == 0 {
     acc
   } else {
-    let bucket := i - (i / 10) * 10
+    let bucket := i - i / 10 * 10
     build_str_loop(i - 1, list.cons(val.vstr(int.to_str(bucket)), acc))
   }
 }
@@ -52,7 +59,6 @@ fn make_df(n :: Int) -> frame.DataFrame {
 }
 
 # ---- Benchmarks ----
-
 # Build the frame and return row count.
 # Exercises: list.cons (PR #405), record construction (Op::MakeRecord),
 # map.set folds, function call locals (slice 3 — locals arena).
@@ -82,7 +88,7 @@ fn bench_mean_x(n :: Int) -> Int {
 # (Op::CallClosure → locals arena slice 3) and Map field access.
 fn is_even_row(row :: List[(Str, val.Value)]) -> Bool {
   match sel.row_get_or_null(row, "x") {
-    VInt(n) => n - (n / 2) * 2 == 0,
+    VInt(n) => n - n / 2 * 2 == 0,
     _ => false,
   }
 }
@@ -107,12 +113,10 @@ fn bench_sort(n :: Int) -> Int {
 # DataFrame/Col/AggSpec records (#407), and lots of fn calls (#409).
 fn bench_groupby(n :: Int) -> Int {
   let df := make_df(n)
-  let specs := list.cons(
-    group.agg_spec("sum_x", "x", group.agg_sum()),
-    list.cons(group.agg_spec("mean_y", "y", group.agg_mean()), [])
-  )
+  let specs := list.cons(group.agg_spec("sum_x", "x", group.agg_sum()), list.cons(group.agg_spec("mean_y", "y", group.agg_mean()), []))
   match group.group_by(df, "g") {
     Err(_) => -1,
     Ok(gf) => group.agg(gf, specs).nrows,
   }
 }
+
