@@ -73,18 +73,20 @@ data there. Get results out via `io.write_csv_fast` /
 
 | Operation | Legacy (any frame) | Fast (arrow-backed, falls back) |
 |---|---|---|
-| filter | `sel.filter_rows(df, desc, pred)` | `sel.filter_eq_int_fast` / `filter_gt_int_fast` / `filter_lt_int_fast` / `filter_eq_str_fast` |
+| filter | `sel.filter_rows(df, desc, pred)` | `sel.filter_{eq,gt,lt}_{int,float}_fast`, `filter_eq_str_fast`, `filter_in_str_fast`, `filter_isnull/notnull_fast`, `drop_nulls_fast` |
 | sort | `srt.sort_by(df, col, asc)` | `srt.sort_by_fast(df, col, asc)` |
-| group+agg | `grp.group_by` then `grp.agg` | `grp.group_agg_fast(df, key, specs)` |
+| group+agg | `grp.group_by` then `grp.agg` | `grp.group_agg_fast(df, key, specs)`; multi-key: `grp.group_agg_by_keys_fast(df, keys, specs)` |
 | join | `jn.inner_join` / `jn.left_join` | `jn.inner_join_fast` / `jn.left_join_fast` |
 | reductions | `agg.sum_col`, `agg.mean_col`, … | `agg.sum_col_fast`, `agg.mean_col_fast`, … |
 | CSV in/out | `fio.read_csv [io]` / `fio.write_csv [io]` | `fio.read_csv_fast [fs_read]` / `fio.write_csv_fast [fs_write]` |
 | Parquet | — | `fio.read_parquet` / `read_parquet_cols` / `write_parquet` |
 
-Fast-path limits (v1): `group_agg_fast` supports
-`sum | mean | min | max | count | n_distinct` only; arrow construction
-covers int64/float64/utf8 columns; joins refuse mixed backings
-(`JOIN_MIXED_BACKING`) instead of silently returning empty.
+Fast-path limits (v1): the group aggs support
+`sum | mean | min | max | count | n_distinct` only; multi-key
+group-by needs an arrow-backed frame (`GROUP_MULTI_KEY_NEEDS_ARROW`
+on legacy); arrow construction covers int64/float64/utf8 columns;
+joins refuse mixed backings (`JOIN_MIXED_BACKING`) instead of
+silently returning empty.
 
 ---
 
@@ -115,6 +117,7 @@ match frame.from_columns(cols) {
 | `SELECT_UNKNOWN_COLUMN` | select | Requested column not in DataFrame (`select_cols`, fast filters) |
 | `GROUP_UNKNOWN_KEY` | group | Fast group-by key not in the arrow table |
 | `GROUP_UNSUPPORTED_FAST_AGG` | group | `std`/`var`/`count_non_null` via `group_agg_fast` on an arrow-backed frame |
+| `GROUP_MULTI_KEY_NEEDS_ARROW` | group | Multi-key `group_agg_by_keys_fast` on a list-backed frame |
 | `JOIN_MIXED_BACKING` | join | `_fast` join given one arrow-backed and one list-backed frame |
 | `IO_EMPTY_INPUT` | io | CSV string is empty |
 | `IO_READ_FAILED` | io | Filesystem / arrow read error |

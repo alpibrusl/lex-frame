@@ -32,6 +32,7 @@ jobs:
           lex check bench/bench_arrow.lex
           lex check bench/bench_df.lex
           lex check bench/bench_frame_fast.lex
+          lex check bench/h2o_groupby.lex
 
       - name: Check examples
         run: |

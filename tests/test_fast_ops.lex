@@ -267,6 +267,143 @@ fn test_left_join_fast_arrow() -> Int {
   }
 }
 
+fn test_filter_gt_float_fast_arrow() -> Int {
+  let fs := list.cons(1.5, list.cons(2.5, list.cons(3.5, [])))
+  match arrow.from_float_columns(list.cons(("f", fs), [])) {
+    Err(_) => 1,
+    Ok(t) => match sel.filter_gt_float_fast(frame.from_arrow_table(t), "f", 2.0) {
+      Err(_) => 1,
+      Ok(df2) => if df2.nrows == 2 {
+        0
+      } else {
+        1
+      },
+    },
+  }
+}
+
+fn test_filter_eq_float_fast_fallback() -> Int {
+  let fs := list.cons(val.vfloat(1.5), list.cons(val.vfloat(2.5), []))
+  match frame.from_columns(list.cons(("f", fs), [])) {
+    Err(_) => 1,
+    Ok(df) => match sel.filter_eq_float_fast(df, "f", 2.5) {
+      Err(_) => 1,
+      Ok(df2) => if df2.nrows == 1 {
+        0
+      } else {
+        1
+      },
+    },
+  }
+}
+
+fn test_filter_in_str_fast_arrow() -> Int {
+  let names := list.cons("a", list.cons("b", list.cons("c", list.cons("a", []))))
+  match arrow.from_str_columns(list.cons(("s", names), [])) {
+    Err(_) => 1,
+    Ok(t) => match sel.filter_in_str_fast(frame.from_arrow_table(t), "s", list.cons("a", list.cons("c", []))) {
+      Err(_) => 1,
+      Ok(df2) => if df2.nrows == 3 {
+        0
+      } else {
+        1
+      },
+    },
+  }
+}
+
+# Nulls in an arrow table can only be produced in-memory via an
+# unmatched left join (k=1 has no right match, so its "b" is null).
+fn make_arrow_with_nulls() -> frame.DataFrame {
+  match make_arrow_pair() {
+    (left, right) => match jn.left_join_fast(left, right, "k") {
+      Err(_) => frame.empty(),
+      Ok(df) => df,
+    },
+  }
+}
+
+fn test_filter_isnull_fast_arrow() -> Int {
+  match sel.filter_isnull_fast(make_arrow_with_nulls(), "b") {
+    Err(_) => 1,
+    Ok(df2) => if df2.nrows == 1 and arrow_sum(df2, "a") == 100 {
+      0
+    } else {
+      1
+    },
+  }
+}
+
+fn test_filter_notnull_fast_arrow() -> Int {
+  match sel.filter_notnull_fast(make_arrow_with_nulls(), "b") {
+    Err(_) => 1,
+    Ok(df2) => if df2.nrows == 2 and arrow_sum(df2, "b") == 50 {
+      0
+    } else {
+      1
+    },
+  }
+}
+
+fn test_drop_nulls_fast_arrow() -> Int {
+  match sel.drop_nulls_fast(make_arrow_with_nulls(), list.cons("b", [])) {
+    Err(_) => 1,
+    Ok(df2) => if df2.nrows == 2 {
+      0
+    } else {
+      1
+    },
+  }
+}
+
+fn test_filter_isnull_fast_fallback() -> Int {
+  let xs := list.cons(val.vint(1), list.cons(val.vnull(), list.cons(val.vint(3), [])))
+  match frame.from_columns(list.cons(("x", xs), [])) {
+    Err(_) => 1,
+    Ok(df) => match sel.filter_isnull_fast(df, "x") {
+      Err(_) => 1,
+      Ok(df2) => if df2.nrows == 1 {
+        0
+      } else {
+        1
+      },
+    },
+  }
+}
+
+# {g1, g2, x}: 2x2 key combinations -> 4 groups, total x = 10.
+fn test_group_agg_by_keys_fast_arrow() -> Int {
+  let g1 := list.cons(1, list.cons(1, list.cons(2, list.cons(2, list.cons(1, [])))))
+  let g2 := list.cons(1, list.cons(2, list.cons(1, list.cons(2, list.cons(1, [])))))
+  let xs := list.cons(1, list.cons(2, list.cons(3, list.cons(4, list.cons(0, [])))))
+  match arrow.from_int_columns(list.cons(("g1", g1), list.cons(("g2", g2), list.cons(("x", xs), [])))) {
+    Err(_) => 1,
+    Ok(t) => {
+      let specs := list.cons(grp.agg_spec("total", "x", grp.agg_sum()), [])
+      match grp.group_agg_by_keys_fast(frame.from_arrow_table(t), list.cons("g1", list.cons("g2", [])), specs) {
+        Err(_) => 1,
+        Ok(df2) => if df2.nrows == 4 and arrow_sum(df2, "total") == 10 {
+          0
+        } else {
+          1
+        },
+      }
+    },
+  }
+}
+
+fn test_group_multi_key_legacy_is_error() -> Int {
+  let specs := list.cons(grp.agg_spec("total", "x", grp.agg_sum()), [])
+  match grp.group_agg_by_keys_fast(make_legacy_df(), list.cons("g", list.cons("x", [])), specs) {
+    Err(e) => if e.code == "GROUP_MULTI_KEY_NEEDS_ARROW" {
+      0
+    } else {
+      1
+    },
+    Ok(_) => 1,
+  }
+}
+
 fn test_join_fast_mixed_backing_is_error() -> Int {
   match make_arrow_pair() {
     (left, _) => match jn.inner_join_fast(left, make_legacy_df(), "g") {
@@ -343,7 +480,7 @@ fn fail_if_nonzero(failures :: Int) -> Int {
 }
 
 fn run_all() -> [fs_read, fs_write] Unit {
-  let failures := test_filter_gt_int_fast_arrow() + test_filter_eq_int_fast_arrow() + test_filter_lt_int_fast_arrow() + test_filter_fast_unknown_col_arrow() + test_filter_gt_int_fast_fallback() + test_filter_eq_str_fast_arrow() + test_filter_fast_provenance_grows() + test_sort_by_fast_arrow_desc() + test_sort_by_fast_arrow_asc() + test_sort_by_fast_unknown_col_is_identity() + test_sort_by_fast_fallback() + test_group_agg_fast_arrow() + test_group_agg_fast_unsupported_op_arrow() + test_group_agg_fast_fallback() + test_inner_join_fast_arrow() + test_left_join_fast_arrow() + test_join_fast_mixed_backing_is_error() + test_join_fast_fallback() + test_parquet_roundtrip() + test_write_parquet_legacy_is_error() + test_write_csv_fast_roundtrip()
+  let failures := test_filter_gt_int_fast_arrow() + test_filter_eq_int_fast_arrow() + test_filter_lt_int_fast_arrow() + test_filter_fast_unknown_col_arrow() + test_filter_gt_int_fast_fallback() + test_filter_eq_str_fast_arrow() + test_filter_fast_provenance_grows() + test_sort_by_fast_arrow_desc() + test_sort_by_fast_arrow_asc() + test_sort_by_fast_unknown_col_is_identity() + test_sort_by_fast_fallback() + test_group_agg_fast_arrow() + test_group_agg_fast_unsupported_op_arrow() + test_group_agg_fast_fallback() + test_inner_join_fast_arrow() + test_left_join_fast_arrow() + test_join_fast_mixed_backing_is_error() + test_join_fast_fallback() + test_parquet_roundtrip() + test_write_parquet_legacy_is_error() + test_write_csv_fast_roundtrip() + test_filter_gt_float_fast_arrow() + test_filter_eq_float_fast_fallback() + test_filter_in_str_fast_arrow() + test_filter_isnull_fast_arrow() + test_filter_notnull_fast_arrow() + test_drop_nulls_fast_arrow() + test_filter_isnull_fast_fallback() + test_group_agg_by_keys_fast_arrow() + test_group_multi_key_legacy_is_error()
   let __lex_discard := fail_if_nonzero(failures)
   ()
 }

@@ -307,3 +307,41 @@ python3 bench/pandas_df_ref.py
 (The `io` grant is needed because the program imports `src/io`, whose
 legacy readers carry `[io]`; the fast ops themselves only exercise
 `fs_read`.)
+
+## H2O db-benchmark groupby (G1 schema, 1e6) — first showing (lex 0.10.7)
+
+Issue #6's acceptance criteria asked for lex-frame to show up on a
+recognised public benchmark once the columnar path could carry it.
+With multi-key `group_agg_by_keys_fast` landed, the official
+db-benchmark groupby queries q1-q5 now run through the public
+lex-frame API: `bench/h2o_groupby.lex`, dataset from
+`bench/gen_h2o_csv.py` (official G1 schema and cardinalities, K=100,
+seed 42). 1e6 rows / 49 MB CSV; 5-run medians; lex fresh-process,
+pandas/polars in-process after warmup (protocol harsh on lex).
+
+| query | groups | lex-frame fast API | pandas 3.0.5 | Polars 1.43 |
+|---|---:|---:|---:|---:|
+| q1: sum v1 by id1 | 100 | 800 ms | 761 ms | 69 ms |
+| q2: sum v1 by id1,id2 | 10 000 | 515 ms | 880 ms | 154 ms |
+| q3: sum v1, mean v3 by id3 | 10 000 | 539 ms | 809 ms | 81 ms |
+| q4: mean v1,v2,v3 by id4 | 100 | 484 ms | 716 ms | 64 ms |
+| q5: sum v1,v2,v3 by id6 | 10 000 | 512 ms | 741 ms | 80 ms |
+
+**Reading this.** lex-frame is at or ahead of pandas on 4 of 5
+queries — on the benchmark suite pandas itself reports against.
+Native Polars is ~7-10x ahead of both; nearly all of that gap on the
+lex side is `arrow.read_csv` (single-threaded arrow-rs reader,
+~400-450 ms of every cell on this string-heavy file) versus Polars'
+parallel CSV reader. The group-by kernel itself IS Polars in both
+columns. Routing `arrow.read_csv` through the Polars reader upstream
+(lex-lang) would close most of the distance; Parquet input closes it
+today (`sum_x` at 1M: 153 ms via CSV, 35 ms via `read_parquet`).
+
+Not yet runnable from the official suite: q6 (median — no kernel),
+q7's derived `max-min` column (the group halves run, see
+`q7_partial`), q8-q10 (window/regression/6-key-count kernels).
+
+```bash
+python3 bench/gen_h2o_csv.py 1000000 /tmp/h2o_g1_1e6.csv
+lex run --allow-effects fs_read,fs_write,io bench/h2o_groupby.lex q2 '"/tmp/h2o_g1_1e6.csv"'
+```

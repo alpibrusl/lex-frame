@@ -51,9 +51,9 @@ fn main() -> Str {
 | `src/value` | `Value` ADT — int/float/str/bool/null; parse, compare, convert (`vint`, `vstr`, `as_int`, …) |
 | `src/col` | Typed `Col` storage (8 variants incl. nullable); kernels the legacy ops run on |
 | `src/frame` | `DataFrame` type; construction, slicing (`head`, `tail`, `slice`), add/drop column; arrow backing |
-| `src/select` | Column select/drop/rename; row filter; derived columns; **fast filters** (`filter_gt_int_fast`, …) |
+| `src/select` | Column select/drop/rename; row filter; derived columns; **fast filters** (int/float/str eq-gt-lt, `filter_in_str_fast`, `filter_isnull/notnull_fast`, `drop_nulls_fast`) |
 | `src/agg` | Null-aware column aggregations; **fast reductions** (`sum_col_fast`, `mean_col_fast`, …) |
-| `src/group` | `group_by` + 9-variant `AggOp`; `value_counts`; **`group_agg_fast`** (one Polars call) |
+| `src/group` | `group_by` + 9-variant `AggOp`; `value_counts`; **`group_agg_fast` / multi-key `group_agg_by_keys_fast`** (one Polars call) |
 | `src/join` | `inner_join`, `left_join`, `cross_join`; **`inner_join_fast` / `left_join_fast`** |
 | `src/sort` | `sort_by`, `sort_by_cols` via merge sort; **`sort_by_fast`** |
 | `src/io` | CSV / JSON-rows parse+render; `read_csv_fast` / `write_csv_fast`; **Parquet** (`read_parquet`, `write_parquet`) |
@@ -110,9 +110,11 @@ frame, so one code path works for both. Full example:
   `write_parquet` or the `agg.*_fast` reductions.
 - Mixing backings in a join is an error (`JOIN_MIXED_BACKING`)
   rather than a silent empty result.
-- `group_agg_fast` supports `sum | mean | min | max | count |
-  n_distinct`; `std` / `var` / `count_non_null` still need the
-  legacy engine (`GROUP_UNSUPPORTED_FAST_AGG`).
+- `group_agg_fast` / `group_agg_by_keys_fast` support `sum | mean |
+  min | max | count | n_distinct`; `std` / `var` / `count_non_null`
+  still need the legacy engine (`GROUP_UNSUPPORTED_FAST_AGG`).
+  Multi-key group-by is fast-path only — on a list-backed frame it
+  returns `GROUP_MULTI_KEY_NEEDS_ARROW`.
 - Arrow constructors cover int64 / float64 / utf8 columns; bool and
   nullable construction from Lex lists stays on the legacy engine.
 
@@ -146,6 +148,7 @@ match sel.drop_col(df, "nonexistent") {
 | `SELECT_UNKNOWN_COLUMN` | select | Requested column missing (`select_cols`, `drop_cols`, fast filters) |
 | `GROUP_UNKNOWN_KEY` | group | Fast group-by key column not in the arrow table |
 | `GROUP_UNSUPPORTED_FAST_AGG` | group | `std`/`var`/`count_non_null` requested via `group_agg_fast` on an arrow-backed frame |
+| `GROUP_MULTI_KEY_NEEDS_ARROW` | group | Multi-key `group_agg_by_keys_fast` on a list-backed frame |
 | `JOIN_MIXED_BACKING` | join | One side arrow-backed, the other list-backed in a `_fast` join |
 | `IO_EMPTY_INPUT` | io | CSV string is empty |
 | `IO_READ_FAILED` | io | Filesystem / arrow read error |
