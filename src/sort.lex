@@ -2,6 +2,8 @@ import "std.list" as list
 
 import "std.map" as map
 
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -24,6 +26,20 @@ fn sort_by(df :: frame.DataFrame, col_name :: Str, asc :: Bool) -> frame.DataFra
       })
       let sub := frame.pick_rows(df, indices)
       frame.record_op(sub, prov.op_sort(col_name, asc))
+    },
+  }
+}
+
+# Fast-path sort. Arrow-backed frames route through df.sort_by
+# (Polars sort over the columnar buffer); legacy frames fall back to
+# the interpreted merge sort below. Mirrors legacy `sort_by`
+# semantics: an unknown column returns the frame unchanged.
+fn sort_by_fast(df :: frame.DataFrame, col_name :: Str, asc :: Bool) -> frame.DataFrame {
+  match df.arrow_table {
+    None => sort_by(df, col_name, asc),
+    Some(t) => match dfq.sort_by(t, col_name, asc) {
+      Err(_) => df,
+      Ok(t2) => frame.with_arrow_table(df, t2, prov.op_sort(col_name, asc)),
     },
   }
 }

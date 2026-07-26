@@ -4,6 +4,8 @@ import "std.map" as map
 
 import "std.str" as str
 
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -59,6 +61,39 @@ fn left_join(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Re
       })
       finish(filled, out_names, "left", on)
     },
+  }
+}
+
+# ===== Fast-path joins =====
+#
+# Both inputs arrow-backed -> one df.inner_join / df.left_join call
+# (Polars hash join). Both legacy -> fall back to the interpreted
+# join below. Mixed backings are an error (JOIN_MIXED_BACKING): the
+# legacy path cannot see an arrow-backed frame's data (its `columns`
+# map is empty), so silently joining would produce an empty result.
+# Note the polars path disambiguates clashing right columns with the
+# same `_right` suffix the legacy path uses.
+fn inner_join_fast(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  match (left.arrow_table, right.arrow_table) {
+    (Some(lt), Some(rt)) => match dfq.inner_join(lt, rt, on) {
+      Err(e) => Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND", e, on)),
+      Ok(t2) => Ok(frame.with_arrow_table(left, t2, prov.op_join("inner", on))),
+    },
+    (None, None) => inner_join(left, right, on),
+    (Some(_), None) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
+    (None, Some(_)) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
+  }
+}
+
+fn left_join_fast(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  match (left.arrow_table, right.arrow_table) {
+    (Some(lt), Some(rt)) => match dfq.left_join(lt, rt, on) {
+      Err(e) => Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND", e, on)),
+      Ok(t2) => Ok(frame.with_arrow_table(left, t2, prov.op_join("left", on))),
+    },
+    (None, None) => left_join(left, right, on),
+    (Some(_), None) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
+    (None, Some(_)) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
   }
 }
 

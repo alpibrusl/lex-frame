@@ -4,6 +4,8 @@ import "std.map" as map
 
 import "std.str" as str
 
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -143,6 +145,74 @@ fn apply_agg_op(sub :: frame.DataFrame, col_name :: Str, op :: AggOp) -> val.Val
     },
     AggNDistinct => val.vint(agg.n_distinct(sub, col_name)),
   }
+}
+
+# Map an AggOp to the op string df.group_by_agg accepts. AggStd /
+# AggVar / AggCountNonNull have no df kernel yet — those return None
+# and `group_agg_fast` reports GROUP_UNSUPPORTED_FAST_AGG for them
+# on arrow-backed frames (the legacy path still supports all nine).
+fn agg_op_to_df_op(op :: AggOp) -> Option[Str] {
+  match op {
+    AggSum => Some("sum"),
+    AggMean => Some("mean"),
+    AggMin => Some("min"),
+    AggMax => Some("max"),
+    AggCount => Some("count"),
+    AggNDistinct => Some("n_distinct"),
+    AggCountNonNull => None,
+    AggStd => None,
+    AggVar => None,
+  }
+}
+
+# Multi-key fast-path group-by + aggregate in one call. Arrow-backed
+# frames route through df.group_by_agg (single Polars hash group-by
+# over the columnar buffer) with any number of key columns. Legacy
+# frames fall back to `group_by` + `agg`, which only supports a
+# single key — multi-key on a list-backed frame is an error
+# (GROUP_MULTI_KEY_NEEDS_ARROW) rather than a silently wrong answer.
+fn group_agg_by_keys_fast(df :: frame.DataFrame, keys :: List[Str], specs :: List[AggSpec]) -> Result[frame.DataFrame, frame.FrameError] {
+  let keys_desc := str.join(keys, ",")
+  match df.arrow_table {
+    None => if list.len(keys) == 1 {
+      match list.head(keys) {
+        None => Err(frame.frame_err("GROUP_UNKNOWN_KEY", "no group keys given", "")),
+        Some(key) => match group_by(df, key) {
+          Err(e) => Err(e),
+          Ok(gf) => Ok(agg(gf, specs)),
+        },
+      }
+    } else {
+      if list.is_empty(keys) {
+        Err(frame.frame_err("GROUP_UNKNOWN_KEY", "no group keys given", ""))
+      } else {
+        Err(frame.frame_err("GROUP_MULTI_KEY_NEEDS_ARROW", "the legacy engine only supports a single group key; build the frame via io.read_csv_fast / io.read_parquet / frame.from_arrow_table for multi-key group-by", keys_desc))
+      }
+    },
+    Some(t) => {
+      let mapped := list.fold(specs, Some([]), fn (acc :: Option[List[(Str, Str, Str)]], spec :: AggSpec) -> Option[List[(Str, Str, Str)]] {
+        match acc {
+          None => None,
+          Some(done) => match agg_op_to_df_op(spec.op) {
+            None => None,
+            Some(op_str) => Some(list.cons((spec.out_col, spec.in_col, op_str), done)),
+          },
+        }
+      })
+      match mapped {
+        None => Err(frame.frame_err("GROUP_UNSUPPORTED_FAST_AGG", "AggStd / AggVar / AggCountNonNull have no df.group_by_agg kernel; use the legacy group_by + agg path on a list-backed frame", keys_desc)),
+        Some(rev_specs) => match dfq.group_by_agg(t, keys, list.reverse(rev_specs)) {
+          Err(e) => Err(frame.frame_err("GROUP_UNKNOWN_KEY", e, keys_desc)),
+          Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_group_by(keys))),
+        },
+      }
+    },
+  }
+}
+
+# Single-key convenience wrapper over group_agg_by_keys_fast.
+fn group_agg_fast(df :: frame.DataFrame, key :: Str, specs :: List[AggSpec]) -> Result[frame.DataFrame, frame.FrameError] {
+  group_agg_by_keys_fast(df, [key], specs)
 }
 
 fn value_counts(df :: frame.DataFrame, col_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {

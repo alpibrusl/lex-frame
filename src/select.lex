@@ -4,6 +4,14 @@ import "std.str" as str
 
 import "std.map" as map
 
+import "std.int" as int
+
+import "std.float" as float
+
+import "std.arrow" as arrow
+
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -113,6 +121,187 @@ fn filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, val.
   })
   let df2 := frame.pick_rows(df, kept)
   Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance), arrow_table: None })
+}
+
+# Shared shape for the fast filters below: arrow-backed frames route
+# to the named std.df kernel; list-backed frames fall back to
+# filter_rows with an equivalent predicate.
+fn wrap_df_filter(df :: frame.DataFrame, name :: Str, desc :: Str, filtered :: Result[Table, Str]) -> Result[frame.DataFrame, frame.FrameError] {
+  match filtered {
+    Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+    Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+  }
+}
+
+# ===== Fast-path filters =====
+#
+# When `df.arrow_table` is `Some(t)`, these route through std.df's
+# Polars-backed filter kernels — one Rust call over the columnar
+# buffer — instead of materialising every row as a List[(Str, Value)]
+# and running the predicate closure in interpreted bytecode (the
+# legacy `filter_rows` path is O(n^2) on the linked-list row API).
+# When `arrow_table` is `None`, they fall back to `filter_rows` with
+# an equivalent predicate, so the same call works on both backings.
+fn filter_eq_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" == ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n == v,
+      }
+    }),
+    Some(t) => match dfq.filter_eq_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_gt_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" > ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n > v,
+      }
+    }),
+    Some(t) => match dfq.filter_gt_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_lt_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" < ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n < v,
+      }
+    }),
+    Some(t) => match dfq.filter_lt_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_eq_str_fast(df :: frame.DataFrame, name :: Str, v :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" == \"", str.concat(v, "\"")))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_str(row_get_or_null(row, name)) {
+        None => false,
+        Some(s) => s == v,
+      }
+    }),
+    Some(t) => match dfq.filter_eq_str(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_eq_float_fast(df :: frame.DataFrame, name :: Str, v :: Float) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" == ", float.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_float(row_get_or_null(row, name)) {
+        None => false,
+        Some(f) => f == v,
+      }
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_eq_float(t, name, v)),
+  }
+}
+
+fn filter_gt_float_fast(df :: frame.DataFrame, name :: Str, v :: Float) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" > ", float.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_float(row_get_or_null(row, name)) {
+        None => false,
+        Some(f) => f > v,
+      }
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_gt_float(t, name, v)),
+  }
+}
+
+fn filter_lt_float_fast(df :: frame.DataFrame, name :: Str, v :: Float) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" < ", float.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_float(row_get_or_null(row, name)) {
+        None => false,
+        Some(f) => f < v,
+      }
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_lt_float(t, name, v)),
+  }
+}
+
+# Membership filter: keep rows whose `name` value is one of `vs`.
+fn filter_in_str_fast(df :: frame.DataFrame, name :: Str, vs :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" in [", str.concat(str.join(vs, ","), "]")))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_str(row_get_or_null(row, name)) {
+        None => false,
+        Some(s) => list.fold(vs, false, fn (acc :: Bool, cand :: Str) -> Bool {
+          acc or cand == s
+        }),
+      }
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_in_str(t, name, vs)),
+  }
+}
+
+# Null-handling filters. On arrow-backed frames nulls come from CSV
+# gaps or unmatched left-join rows; on legacy frames from val.vnull().
+fn filter_isnull_fast(df :: frame.DataFrame, name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, " is null")
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      val.is_null(row_get_or_null(row, name))
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_isnull(t, name)),
+  }
+}
+
+fn filter_notnull_fast(df :: frame.DataFrame, name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, " is not null")
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      if val.is_null(row_get_or_null(row, name)) {
+        false
+      } else {
+        true
+      }
+    }),
+    Some(t) => wrap_df_filter(df, name, desc, dfq.filter_notnull(t, name)),
+  }
+}
+
+# Drop every row that has a null in ANY of the named columns.
+fn drop_nulls_fast(df :: frame.DataFrame, cols :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat("drop_nulls [", str.concat(str.join(cols, ","), "]"))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      list.fold(cols, true, fn (acc :: Bool, c :: Str) -> Bool {
+        acc and if val.is_null(row_get_or_null(row, c)) {
+          false
+        } else {
+          true
+        }
+      })
+    }),
+    Some(t) => wrap_df_filter(df, str.join(cols, ","), desc, dfq.drop_nulls(t, cols)),
+  }
 }
 
 fn with_column(df :: frame.DataFrame, name :: Str, derive :: (List[(Str, val.Value)]) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {

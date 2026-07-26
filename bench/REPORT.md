@@ -247,3 +247,101 @@ lex run --allow-effects fs_read bench/bench_df.lex sum_x_csv     '"/tmp/bench_1m
 # pandas side
 python3 bench/pandas_df_ref.py
 ```
+
+## Path-1 slice-3/4 win — the PUBLIC lex-frame API on std.df (measured, lex 0.10.7)
+
+Slice-2 above was a std.df-direct claim. As of this slice the public
+lex-frame surface itself routes through std.df when the frame is
+arrow-backed: `select.filter_*_fast`, `sort.sort_by_fast`,
+`group.group_agg_fast`, `join.*_join_fast`, `io.write_csv_fast`, plus
+Parquet I/O (`io.read_parquet` / `write_parquet`). Bench source:
+`bench/bench_frame_fast.lex` — the same four ops as `bench_df.lex`,
+called through `io.read_csv_fast` + the `_fast` wrappers (provenance
+recording, FrameError mapping, DataFrame record round-trip included).
+
+Protocol: 7 fresh-process invocations per cell, median ms (lex side
+includes parse + type-check of lex-frame's 13 modules on every run);
+pandas 3.0.5 in-process after one warmup, 5-run median. Same shared
+linux container for all three columns; CSVs per the slice-2 recipe.
+
+| op (read CSV + op) | n | lex-frame fast API | std.df direct | pandas 3.0.5 |
+|---|---:|---:|---:|---:|
+| `group_by_csv`  | 100 k |  64 ms |  31 ms |  30 ms |
+| `sort_csv`      | 100 k |  65 ms |  32 ms |  25 ms |
+| `filter_gt_csv` | 100 k |  56 ms |  24 ms |  22 ms |
+| `sum_x_csv`     | 100 k |  50 ms |  18 ms |  22 ms |
+| `group_by_csv`  |   1 M | 205 ms | 156 ms | 198 ms |
+| `sort_csv`      |   1 M | 229 ms | 185 ms | 222 ms |
+| `filter_gt_csv` |   1 M | 192 ms | 161 ms | 178 ms |
+| `sum_x_csv`     |   1 M | 153 ms | 114 ms | 164 ms |
+| `pipeline_csv` (filter → sort → group) | 1 M | 229 ms | — | — |
+
+**Reading this.** At 1 M rows the public lex-frame API is within
+±10-15% of pandas on every op (faster on `sum`, slightly slower on the
+rest) — versus **3-4 orders of magnitude slower** on the legacy
+List[Value] engine (the slice-0 table above: `filter` needed 18 s for
+300 rows; it now does 500 000 rows in 192 ms, startup included). The
+gap between the `lex-frame fast API` and `std.df direct` columns is
+almost entirely the fixed per-process parse + type-check of the
+lex-frame module tree (~30-40 ms) — the wrapper cost per op
+(provenance cons + FrameError mapping) is ~1-2 ms, and `pipeline_csv`
+(three chained ops) costs the same as its slowest single op.
+
+The remaining legacy-only surface: closure predicates
+(`select.filter_rows`), `std`/`var`/`count_non_null` group aggs, bool
+and nullable column construction, and the inspect walkers. Everything
+else can stay arrow-backed end-to-end.
+
+Reproduce:
+
+```bash
+# CSVs per the slice-2 recipe, then:
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex group_by_csv  '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex sort_csv      '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex filter_gt_csv '"/tmp/bench_1m.csv"' 500000
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex sum_x_csv     '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex pipeline_csv  '"/tmp/bench_1m.csv"' 500000
+python3 bench/pandas_df_ref.py
+```
+
+(The `io` grant is needed because the program imports `src/io`, whose
+legacy readers carry `[io]`; the fast ops themselves only exercise
+`fs_read`.)
+
+## H2O db-benchmark groupby (G1 schema, 1e6) — first showing (lex 0.10.7)
+
+Issue #6's acceptance criteria asked for lex-frame to show up on a
+recognised public benchmark once the columnar path could carry it.
+With multi-key `group_agg_by_keys_fast` landed, the official
+db-benchmark groupby queries q1-q5 now run through the public
+lex-frame API: `bench/h2o_groupby.lex`, dataset from
+`bench/gen_h2o_csv.py` (official G1 schema and cardinalities, K=100,
+seed 42). 1e6 rows / 49 MB CSV; 5-run medians; lex fresh-process,
+pandas/polars in-process after warmup (protocol harsh on lex).
+
+| query | groups | lex-frame fast API | pandas 3.0.5 | Polars 1.43 |
+|---|---:|---:|---:|---:|
+| q1: sum v1 by id1 | 100 | 800 ms | 761 ms | 69 ms |
+| q2: sum v1 by id1,id2 | 10 000 | 515 ms | 880 ms | 154 ms |
+| q3: sum v1, mean v3 by id3 | 10 000 | 539 ms | 809 ms | 81 ms |
+| q4: mean v1,v2,v3 by id4 | 100 | 484 ms | 716 ms | 64 ms |
+| q5: sum v1,v2,v3 by id6 | 10 000 | 512 ms | 741 ms | 80 ms |
+
+**Reading this.** lex-frame is at or ahead of pandas on 4 of 5
+queries — on the benchmark suite pandas itself reports against.
+Native Polars is ~7-10x ahead of both; nearly all of that gap on the
+lex side is `arrow.read_csv` (single-threaded arrow-rs reader,
+~400-450 ms of every cell on this string-heavy file) versus Polars'
+parallel CSV reader. The group-by kernel itself IS Polars in both
+columns. Routing `arrow.read_csv` through the Polars reader upstream
+(lex-lang) would close most of the distance; Parquet input closes it
+today (`sum_x` at 1M: 153 ms via CSV, 35 ms via `read_parquet`).
+
+Not yet runnable from the official suite: q6 (median — no kernel),
+q7's derived `max-min` column (the group halves run, see
+`q7_partial`), q8-q10 (window/regression/6-key-count kernels).
+
+```bash
+python3 bench/gen_h2o_csv.py 1000000 /tmp/h2o_g1_1e6.csv
+lex run --allow-effects fs_read,fs_write,io bench/h2o_groupby.lex q2 '"/tmp/h2o_g1_1e6.csv"'
+```
