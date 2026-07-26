@@ -12,15 +12,22 @@ import "./col" as col
 
 import "./provenance" as prov
 
-# `arrow_table` is an optional cached arrow.Table — set when the
-# DataFrame was built via `from_arrow_table` / `io.read_csv_fast`.
-# When present, the fast-path agg ops (`agg.sum_col_fast`, etc.)
-# dispatch through arrow kernels for a 50-1000x speedup over the
-# List[Value]-based path. When None, ops fall back to the legacy
-# Map[Str, Col] representation. Both representations are kept in
-# sync — DataFrames built via `from_arrow_table` populate `columns`
-# eagerly so existing helpers (inspect, select, group_by, etc.)
-# keep working without change.
+# `arrow_table` is an optional arrow.Table backing — set when the
+# DataFrame was built via `from_arrow_table` / `io.read_csv_fast` /
+# `io.read_parquet`, or produced by one of the `_fast` ops. When
+# present, the fast-path ops (`agg.sum_col_fast`, `select.filter_*_fast`,
+# `sort.sort_by_fast`, `group.group_agg_fast`, `join.*_join_fast`)
+# dispatch through std.arrow / std.df kernels for a 50-1000x speedup
+# over the List[Value]-based path. When None, the `_fast` ops fall
+# back to the legacy Map[Str, Col] representation.
+#
+# The two representations are NOT kept in sync: an arrow-backed
+# DataFrame has an EMPTY `columns` map (there is no arrow -> List
+# materializer in std.arrow yet), so legacy ops that walk
+# `df.columns` (filter_rows with a closure, the inspect walkers,
+# dist.par_*) see no data on an arrow-backed frame. Stay on the
+# `_fast` ops end-to-end for arrow-backed frames, and use
+# `arrow.write_csv` / `io.write_csv_fast` to get data out.
 type DataFrame = { col_names :: List[Str], columns :: Map[Str, col.Col], nrows :: Int, provenance :: List[prov.Op], arrow_table :: Option[Table] }
 
 type FrameError = { code :: Str, message :: Str, context :: Str }
@@ -56,6 +63,15 @@ fn empty() -> DataFrame {
 # directly is a follow-up (see lex-frame#6 sub-issue).
 fn from_arrow_table(t :: Table) -> DataFrame {
   { col_names: arrow.col_names(t), columns: map.new(), nrows: arrow.nrows(t), provenance: [prov.op_load("<arrow_table>", arrow.nrows(t))], arrow_table: Some(t) }
+}
+
+# Wrap an arrow.Table produced by a fast-path op (std.df filter /
+# sort / group_by_agg / join) into a DataFrame, carrying forward the
+# input frame's provenance and consing the op that produced it. This
+# is what keeps `inspect.history` truthful across `_fast` pipelines —
+# `from_arrow_table` would reset the trail to a single `load` op.
+fn with_arrow_table(df :: DataFrame, t :: Table, op :: prov.Op) -> DataFrame {
+  { col_names: arrow.col_names(t), columns: map.new(), nrows: arrow.nrows(t), provenance: list.cons(op, df.provenance), arrow_table: Some(t) }
 }
 
 fn from_columns(pairs :: List[(Str, List[val.Value])]) -> Result[DataFrame, FrameError] {

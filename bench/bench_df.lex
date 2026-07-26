@@ -17,13 +17,13 @@
 #
 # At 100k, lex's ~25 ms parse + type-check dominates and the two engines
 # are within noise. At 1M (query-dominated) lex beats pandas across the
-# board. NB: this is std.df direct — public lex-frame API still goes
-# through List[Value] until the wrapper migration (lex-frame#6) lands.
+# board. NB: this is std.df direct — bench_frame_fast.lex runs the
+# same workload through the PUBLIC lex-frame `_fast` API (the #6
+# wrapper migration); the delta between the two files is the wrapper
+# layer's cost.
 #
 # Requires lex >= 0.9.4 (std.arrow + std.df, both shipped in lex-lang
-# #428). The full lex-frame migration (#6) rewires every public op
-# to this path automatically; this file is the in-source proof point
-# once the migration lands.
+# #428).
 
 import "std.list" as list
 

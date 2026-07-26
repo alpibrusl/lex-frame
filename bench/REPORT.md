@@ -247,3 +247,63 @@ lex run --allow-effects fs_read bench/bench_df.lex sum_x_csv     '"/tmp/bench_1m
 # pandas side
 python3 bench/pandas_df_ref.py
 ```
+
+## Path-1 slice-3/4 win — the PUBLIC lex-frame API on std.df (measured, lex 0.10.7)
+
+Slice-2 above was a std.df-direct claim. As of this slice the public
+lex-frame surface itself routes through std.df when the frame is
+arrow-backed: `select.filter_*_fast`, `sort.sort_by_fast`,
+`group.group_agg_fast`, `join.*_join_fast`, `io.write_csv_fast`, plus
+Parquet I/O (`io.read_parquet` / `write_parquet`). Bench source:
+`bench/bench_frame_fast.lex` — the same four ops as `bench_df.lex`,
+called through `io.read_csv_fast` + the `_fast` wrappers (provenance
+recording, FrameError mapping, DataFrame record round-trip included).
+
+Protocol: 7 fresh-process invocations per cell, median ms (lex side
+includes parse + type-check of lex-frame's 13 modules on every run);
+pandas 3.0.5 in-process after one warmup, 5-run median. Same shared
+linux container for all three columns; CSVs per the slice-2 recipe.
+
+| op (read CSV + op) | n | lex-frame fast API | std.df direct | pandas 3.0.5 |
+|---|---:|---:|---:|---:|
+| `group_by_csv`  | 100 k |  64 ms |  31 ms |  30 ms |
+| `sort_csv`      | 100 k |  65 ms |  32 ms |  25 ms |
+| `filter_gt_csv` | 100 k |  56 ms |  24 ms |  22 ms |
+| `sum_x_csv`     | 100 k |  50 ms |  18 ms |  22 ms |
+| `group_by_csv`  |   1 M | 205 ms | 156 ms | 198 ms |
+| `sort_csv`      |   1 M | 229 ms | 185 ms | 222 ms |
+| `filter_gt_csv` |   1 M | 192 ms | 161 ms | 178 ms |
+| `sum_x_csv`     |   1 M | 153 ms | 114 ms | 164 ms |
+| `pipeline_csv` (filter → sort → group) | 1 M | 229 ms | — | — |
+
+**Reading this.** At 1 M rows the public lex-frame API is within
+±10-15% of pandas on every op (faster on `sum`, slightly slower on the
+rest) — versus **3-4 orders of magnitude slower** on the legacy
+List[Value] engine (the slice-0 table above: `filter` needed 18 s for
+300 rows; it now does 500 000 rows in 192 ms, startup included). The
+gap between the `lex-frame fast API` and `std.df direct` columns is
+almost entirely the fixed per-process parse + type-check of the
+lex-frame module tree (~30-40 ms) — the wrapper cost per op
+(provenance cons + FrameError mapping) is ~1-2 ms, and `pipeline_csv`
+(three chained ops) costs the same as its slowest single op.
+
+The remaining legacy-only surface: closure predicates
+(`select.filter_rows`), `std`/`var`/`count_non_null` group aggs, bool
+and nullable column construction, and the inspect walkers. Everything
+else can stay arrow-backed end-to-end.
+
+Reproduce:
+
+```bash
+# CSVs per the slice-2 recipe, then:
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex group_by_csv  '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex sort_csv      '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex filter_gt_csv '"/tmp/bench_1m.csv"' 500000
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex sum_x_csv     '"/tmp/bench_1m.csv"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_frame_fast.lex pipeline_csv  '"/tmp/bench_1m.csv"' 500000
+python3 bench/pandas_df_ref.py
+```
+
+(The `io` grant is needed because the program imports `src/io`, whose
+legacy readers carry `[io]`; the fast ops themselves only exercise
+`fs_read`.)

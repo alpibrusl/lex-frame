@@ -4,6 +4,12 @@ import "std.str" as str
 
 import "std.map" as map
 
+import "std.int" as int
+
+import "std.arrow" as arrow
+
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -113,6 +119,79 @@ fn filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, val.
   })
   let df2 := frame.pick_rows(df, kept)
   Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance), arrow_table: None })
+}
+
+# ===== Fast-path filters =====
+#
+# When `df.arrow_table` is `Some(t)`, these route through std.df's
+# Polars-backed filter kernels — one Rust call over the columnar
+# buffer — instead of materialising every row as a List[(Str, Value)]
+# and running the predicate closure in interpreted bytecode (the
+# legacy `filter_rows` path is O(n^2) on the linked-list row API).
+# When `arrow_table` is `None`, they fall back to `filter_rows` with
+# an equivalent predicate, so the same call works on both backings.
+fn filter_eq_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" == ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n == v,
+      }
+    }),
+    Some(t) => match dfq.filter_eq_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_gt_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" > ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n > v,
+      }
+    }),
+    Some(t) => match dfq.filter_gt_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_lt_int_fast(df :: frame.DataFrame, name :: Str, v :: Int) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" < ", int.to_str(v)))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_int(row_get_or_null(row, name)) {
+        None => false,
+        Some(n) => n < v,
+      }
+    }),
+    Some(t) => match dfq.filter_lt_int(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
+}
+
+fn filter_eq_str_fast(df :: frame.DataFrame, name :: Str, v :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  let desc := str.concat(name, str.concat(" == \"", str.concat(v, "\"")))
+  match df.arrow_table {
+    None => filter_rows(df, desc, fn (row :: List[(Str, val.Value)]) -> Bool {
+      match val.as_str(row_get_or_null(row, name)) {
+        None => false,
+        Some(s) => s == v,
+      }
+    }),
+    Some(t) => match dfq.filter_eq_str(t, name, v) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, name)),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_filter(desc, arrow.nrows(t2)))),
+    },
+  }
 }
 
 fn with_column(df :: frame.DataFrame, name :: Str, derive :: (List[(Str, val.Value)]) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {

@@ -4,6 +4,8 @@ import "std.map" as map
 
 import "std.str" as str
 
+import "std.df" as dfq
+
 import "./value" as val
 
 import "./col" as col
@@ -142,6 +144,55 @@ fn apply_agg_op(sub :: frame.DataFrame, col_name :: Str, op :: AggOp) -> val.Val
       None => val.vnull(),
     },
     AggNDistinct => val.vint(agg.n_distinct(sub, col_name)),
+  }
+}
+
+# Map an AggOp to the op string df.group_by_agg accepts. AggStd /
+# AggVar / AggCountNonNull have no df kernel yet — those return None
+# and `group_agg_fast` reports GROUP_UNSUPPORTED_FAST_AGG for them
+# on arrow-backed frames (the legacy path still supports all nine).
+fn agg_op_to_df_op(op :: AggOp) -> Option[Str] {
+  match op {
+    AggSum => Some("sum"),
+    AggMean => Some("mean"),
+    AggMin => Some("min"),
+    AggMax => Some("max"),
+    AggCount => Some("count"),
+    AggNDistinct => Some("n_distinct"),
+    AggCountNonNull => None,
+    AggStd => None,
+    AggVar => None,
+  }
+}
+
+# Fast-path group-by + aggregate in one call. Arrow-backed frames
+# route through df.group_by_agg (single Polars call — hash group-by
+# over the columnar buffer); legacy frames fall back to
+# `group_by` + `agg`, so the same call works on both backings.
+fn group_agg_fast(df :: frame.DataFrame, key :: Str, specs :: List[AggSpec]) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    None => match group_by(df, key) {
+      Err(e) => Err(e),
+      Ok(gf) => Ok(agg(gf, specs)),
+    },
+    Some(t) => {
+      let mapped := list.fold(specs, Some([]), fn (acc :: Option[List[(Str, Str, Str)]], spec :: AggSpec) -> Option[List[(Str, Str, Str)]] {
+        match acc {
+          None => None,
+          Some(done) => match agg_op_to_df_op(spec.op) {
+            None => None,
+            Some(op_str) => Some(list.cons((spec.out_col, spec.in_col, op_str), done)),
+          },
+        }
+      })
+      match mapped {
+        None => Err(frame.frame_err("GROUP_UNSUPPORTED_FAST_AGG", "AggStd / AggVar / AggCountNonNull have no df.group_by_agg kernel; use the legacy group_by + agg path on a list-backed frame", key)),
+        Some(rev_specs) => match dfq.group_by_agg(t, [key], list.reverse(rev_specs)) {
+          Err(e) => Err(frame.frame_err("GROUP_UNKNOWN_KEY", e, key)),
+          Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_group_by([key]))),
+        },
+      }
+    },
   }
 }
 

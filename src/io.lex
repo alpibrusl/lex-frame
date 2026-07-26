@@ -22,7 +22,7 @@ import "./provenance" as prov
 
 fn parse_csv(content :: Str) -> Result[frame.DataFrame, frame.FrameError] {
   if str.is_empty(str.trim(content)) {
-    Err(frame.frame_err("empty_input", "CSV content is empty", ""))
+    Err(frame.frame_err("IO_EMPTY_INPUT", "CSV content is empty", ""))
   } else {
     let raw_lines := str.split(str.trim(content), "\n")
     let lines := list.filter(raw_lines, fn (l :: Str) -> Bool {
@@ -33,7 +33,7 @@ fn parse_csv(content :: Str) -> Result[frame.DataFrame, frame.FrameError] {
       }
     })
     match list.head(lines) {
-      None => Err(frame.frame_err("empty_input", "no header row found", "")),
+      None => Err(frame.frame_err("IO_EMPTY_INPUT", "no header row found", "")),
       Some(hdr) => {
         let headers := list.map(str.split(hdr, ","), fn (s :: Str) -> Str {
           str.trim(s)
@@ -180,7 +180,7 @@ fn nth_val_list(xs :: List[val.Value], i :: Int) -> val.Value {
 
 fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {
   match io.read(path) {
-    Err(e) => Err(frame.frame_err("io_error", str.concat("read failed: ", e), path)),
+    Err(e) => Err(frame.frame_err("IO_READ_FAILED", str.concat("read failed: ", e), path)),
     Ok(content) => parse_csv(content),
   }
 }
@@ -197,15 +197,64 @@ fn read_csv(path :: Str) -> [io] Result[frame.DataFrame, frame.FrameError] {
 # `bench/REPORT.md` for measured numbers.
 fn read_csv_fast(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
   match arrow.read_csv(path) {
-    Err(e) => Err(frame.frame_err("io_error", str.concat("arrow.read_csv failed: ", e), path)),
+    Err(e) => Err(frame.frame_err("IO_READ_FAILED", str.concat("arrow.read_csv failed: ", e), path)),
     Ok(t) => Ok(frame.from_arrow_table(t)),
   }
 }
 
 fn write_csv(path :: Str, df :: frame.DataFrame) -> [io] Result[Unit, frame.FrameError] {
   match io.write(path, render_csv(df)) {
-    Err(e) => Err(frame.frame_err("io_error", str.concat("write failed: ", e), path)),
+    Err(e) => Err(frame.frame_err("IO_WRITE_FAILED", str.concat("write failed: ", e), path)),
     Ok(_) => Ok(()),
+  }
+}
+
+# Fast-path CSV writer for arrow-backed DataFrames: one
+# `arrow.write_csv` call over the columnar buffer, under the narrow
+# `[fs_write]` effect. List-backed frames are rejected rather than
+# silently falling back — the legacy `write_csv` fallback would
+# require the wider `[io]` effect in this signature, defeating the
+# per-path `--allow-fs-write` policy scoping. Use `write_csv` for
+# list-backed frames.
+fn write_csv_fast(path :: Str, df :: frame.DataFrame) -> [fs_write] Result[Unit, frame.FrameError] {
+  match df.arrow_table {
+    None => Err(frame.frame_err("IO_WRITE_FAILED", "write_csv_fast requires an arrow-backed DataFrame (built via io.read_csv_fast / io.read_parquet / frame.from_arrow_table); use write_csv for list-backed frames", path)),
+    Some(t) => match arrow.write_csv(t, path) {
+      Err(e) => Err(frame.frame_err("IO_WRITE_FAILED", str.concat("arrow.write_csv failed: ", e), path)),
+      Ok(_) => Ok(()),
+    },
+  }
+}
+
+# Parquet I/O — arrow-backed only (there is no interpreted parquet
+# codec, by design: parquet exists here for scale, and scale means
+# the arrow path). `read_parquet` returns an arrow-backed DataFrame
+# ready for the `_fast` op pipeline.
+fn read_parquet(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
+  match arrow.read_parquet(path) {
+    Err(e) => Err(frame.frame_err("IO_READ_FAILED", str.concat("arrow.read_parquet failed: ", e), path)),
+    Ok(t) => Ok(frame.from_arrow_table(t)),
+  }
+}
+
+# Column-projected parquet read: only the named columns are decoded
+# (the projection is pushed into the parquet reader). Prefer this
+# over `read_parquet` + `select_cols` when you need a subset of a
+# wide file.
+fn read_parquet_cols(path :: Str, cols :: List[Str]) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
+  match arrow.read_parquet_cols(path, cols) {
+    Err(e) => Err(frame.frame_err("IO_READ_FAILED", str.concat("arrow.read_parquet_cols failed: ", e), path)),
+    Ok(t) => Ok(frame.from_arrow_table(t)),
+  }
+}
+
+fn write_parquet(path :: Str, df :: frame.DataFrame) -> [fs_write] Result[Unit, frame.FrameError] {
+  match df.arrow_table {
+    None => Err(frame.frame_err("IO_WRITE_FAILED", "write_parquet requires an arrow-backed DataFrame (built via io.read_csv_fast / io.read_parquet / frame.from_arrow_table)", path)),
+    Some(t) => match arrow.write_parquet(t, path) {
+      Err(e) => Err(frame.frame_err("IO_WRITE_FAILED", str.concat("arrow.write_parquet failed: ", e), path)),
+      Ok(_) => Ok(()),
+    },
   }
 }
 

@@ -48,18 +48,73 @@ fn main() -> Str {
 
 | Module | Purpose |
 |---|---|
-| `src/value` | `Value` ADT — `VInt`, `VFloat`, `VStr`, `VBool`, `VNull`; parse, compare, convert |
-| `src/frame` | `DataFrame` type; construction, slicing (`head`, `tail`, `slice`), add/drop column |
-| `src/select` | Column select/drop/rename; row filter; derived columns (`with_column`) |
-| `src/agg` | Null-aware column aggregations — `sum`, `mean`, `min`, `max`, `std`, `variance`, `n_distinct` |
-| `src/group` | `group_by` + 9-variant `AggOp`; `value_counts` convenience |
-| `src/join` | `inner_join`, `left_join`, `cross_join` with `_right` suffix disambiguation |
-| `src/sort` | `sort_by`, `sort_by_cols` via merge sort on argsort indices |
-| `src/io` | CSV and JSON-rows parse/render; `read_csv [io]` / `write_csv [io]` |
+| `src/value` | `Value` ADT — int/float/str/bool/null; parse, compare, convert (`vint`, `vstr`, `as_int`, …) |
+| `src/col` | Typed `Col` storage (8 variants incl. nullable); kernels the legacy ops run on |
+| `src/frame` | `DataFrame` type; construction, slicing (`head`, `tail`, `slice`), add/drop column; arrow backing |
+| `src/select` | Column select/drop/rename; row filter; derived columns; **fast filters** (`filter_gt_int_fast`, …) |
+| `src/agg` | Null-aware column aggregations; **fast reductions** (`sum_col_fast`, `mean_col_fast`, …) |
+| `src/group` | `group_by` + 9-variant `AggOp`; `value_counts`; **`group_agg_fast`** (one Polars call) |
+| `src/join` | `inner_join`, `left_join`, `cross_join`; **`inner_join_fast` / `left_join_fast`** |
+| `src/sort` | `sort_by`, `sort_by_cols` via merge sort; **`sort_by_fast`** |
+| `src/io` | CSV / JSON-rows parse+render; `read_csv_fast` / `write_csv_fast`; **Parquet** (`read_parquet`, `write_parquet`) |
 | `src/stats` | `describe` (5-row summary), Pearson `correlation`, `null_counts` |
 | `src/inspect` | `summary`, `to_markdown`, `to_json_payload`, `column_profile`, `history`, `sample_rows`, `null_report` |
 | `src/provenance` | 13-variant `Op` ADT; embedded in every `DataFrame` |
-| `src/dist` | Parallel column/row transforms via `list.par_map`; cost estimation |
+| `src/dist` | Chunked column/row transforms + cost estimation (sequential today; the fast path parallelises in Polars instead) |
+
+## Performance: the columnar fast path
+
+`lex-frame` has two engines behind one API:
+
+- **Legacy list engine** — columns are typed Lex lists (`src/col`),
+  every op runs in interpreted bytecode. Fully general (closures,
+  nullable bools, row API), but O(n²) on row-indexed ops and ~3-4
+  orders of magnitude slower than pandas at scale.
+- **Columnar fast path** — the `DataFrame` carries an
+  `arrow_table :: Option[Table]` backing. When present, `_fast` ops
+  dispatch to `std.arrow` / `std.df` (Arrow + Polars kernels, one
+  native call per op). At 1M rows this is **competitive with pandas**
+  (see `bench/REPORT.md`).
+
+Build arrow-backed frames with `io.read_csv_fast`, `io.read_parquet`,
+or `frame.from_arrow_table`; then stay on the `_fast` ops:
+
+```lex
+import "./src/io"     as fio
+import "./src/select" as sel
+import "./src/sort"   as srt
+import "./src/group"  as grp
+
+fn pipeline(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
+  match fio.read_csv_fast(path) {
+    Err(e) => Err(e),
+    Ok(df) => match sel.filter_gt_int_fast(df, "x", 100) {
+      Err(e) => Err(e),
+      Ok(hot) => grp.group_agg_fast(srt.sort_by_fast(hot, "x", false), "g",
+        [grp.agg_spec("total", "x", grp.agg_sum())]),
+    },
+  }
+}
+```
+
+Every `_fast` op falls back to the legacy engine on a list-backed
+frame, so one code path works for both. Full example:
+`examples/06_fast_pipeline.lex`.
+
+**Sharp edges** (v1 of the migration, see issue #6):
+
+- An arrow-backed frame's legacy `columns` map is **empty** — the
+  closure-based ops (`filter_rows`, `with_column`, `inspect.*`
+  walkers, `dist.*`) see no data on it. Stay on `_fast` ops
+  end-to-end, and get data out via `write_csv_fast` /
+  `write_parquet` or the `agg.*_fast` reductions.
+- Mixing backings in a join is an error (`JOIN_MIXED_BACKING`)
+  rather than a silent empty result.
+- `group_agg_fast` supports `sum | mean | min | max | count |
+  n_distinct`; `std` / `var` / `count_non_null` still need the
+  legacy engine (`GROUP_UNSUPPORTED_FAST_AGG`).
+- Arrow constructors cover int64 / float64 / utf8 columns; bool and
+  nullable construction from Lex lists stays on the legacy engine.
 
 ## Error handling
 
@@ -87,15 +142,14 @@ match sel.drop_col(df, "nonexistent") {
 | Code | Module | Trigger |
 |---|---|---|
 | `FRAME_LENGTH_MISMATCH` | frame | Columns have different row counts |
-| `FRAME_COLUMN_NOT_FOUND` | frame | Column name not in DataFrame |
-| `FRAME_DUPLICATE_COLUMN` | frame | Duplicate column name in construction |
-| `SELECT_UNKNOWN_COLUMN` | select | Requested column missing |
-| `GROUP_UNKNOWN_KEY` | group | Key column not in DataFrame |
-| `JOIN_KEY_NOT_IN_LEFT` | join | Join key missing from left frame |
-| `JOIN_KEY_NOT_IN_RIGHT` | join | Join key missing from right frame |
+| `FRAME_COLUMN_NOT_FOUND` | frame, select, group, join | Column name not in DataFrame (join errors carry `left.`/`right.` context) |
+| `SELECT_UNKNOWN_COLUMN` | select | Requested column missing (`select_cols`, `drop_cols`, fast filters) |
+| `GROUP_UNKNOWN_KEY` | group | Fast group-by key column not in the arrow table |
+| `GROUP_UNSUPPORTED_FAST_AGG` | group | `std`/`var`/`count_non_null` requested via `group_agg_fast` on an arrow-backed frame |
+| `JOIN_MIXED_BACKING` | join | One side arrow-backed, the other list-backed in a `_fast` join |
 | `IO_EMPTY_INPUT` | io | CSV string is empty |
-| `IO_READ_FAILED` | io | Filesystem read error |
-| `IO_WRITE_FAILED` | io | Filesystem write error |
+| `IO_READ_FAILED` | io | Filesystem / arrow read error |
+| `IO_WRITE_FAILED` | io | Filesystem / arrow write error, or a fast writer given a list-backed frame |
 
 ## Agent-first output
 
@@ -184,16 +238,17 @@ Runnable examples are in `examples/`:
 | `02_agent_workflow.lex` | Error-code branching, provenance, `to_json_payload` |
 | `03_group_and_join.lex` | `group_by` + `agg`, `inner_join`, `left_join` |
 | `04_csv_analysis.lex` | `read_csv`, `describe`, `correlation`, `null_report` |
-| `05_distributed.lex` | `par_apply_col`, `par_apply_rows`, cost estimation |
+| `05_distributed.lex` | `par_apply_col`, `par_filter_rows`, cost estimation |
+| `06_fast_pipeline.lex` | Columnar fast path: `read_csv_fast` → fast filter/sort/group → `write_csv_fast` |
 
 ## Running tests
 
 ```bash
 lex test
-# 11 passed, 0 failed
+# 13 passed, 0 failed
 ```
 
-Requires lex v0.9.2 or later.
+Requires lex v0.10.7 (the version pinned in `lex.toml` and CI; `std.arrow` / `std.df` fast paths need >= 0.10.0).
 
 ---
 
