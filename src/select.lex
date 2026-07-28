@@ -83,6 +83,23 @@ fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataF
   }
 }
 
+# Arrow-aware projection. The legacy `select_cols` above always
+# returns a list-backed frame (arrow_table: None) — calling it on an
+# arrow-backed frame silently drops the columnar backing and, because
+# the legacy `columns` map is empty on arrow frames, drops the data
+# with it. This variant keeps each backing on its own path:
+# arrow-backed frames project through `arrow.select_cols` (zero-copy
+# column slice), list-backed frames use the legacy path.
+fn select_cols_fast(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    None => select_cols(df, wanted),
+    Some(t) => match arrow.select_cols(t, wanted) {
+      Err(e) => Err(frame.frame_err("SELECT_UNKNOWN_COLUMN", e, str.join(wanted, ","))),
+      Ok(t2) => Ok(frame.with_arrow_table(df, t2, prov.op_select(wanted))),
+    },
+  }
+}
+
 fn drop_cols(df :: frame.DataFrame, to_drop :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
   let keep := list.filter(df.col_names, fn (name :: Str) -> Bool {
     list.fold(to_drop, true, fn (acc :: Bool, d :: Str) -> Bool {

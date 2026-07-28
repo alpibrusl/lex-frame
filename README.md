@@ -60,6 +60,7 @@ fn main() -> Str {
 | `src/stats` | `describe` (5-row summary), Pearson `correlation`, `null_counts` |
 | `src/inspect` | `summary`, `to_markdown`, `to_json_payload`, `column_profile`, `history`, `sample_rows`, `null_report` |
 | `src/provenance` | 13-variant `Op` ADT; embedded in every `DataFrame` |
+| `src/lazy` | **Lazy query plans** — record ops, optimize (filter hoisting, projection pruning), execute on `collect` |
 | `src/dist` | Chunked column/row transforms + cost estimation (sequential today; the fast path parallelises in Polars instead) |
 
 ## Performance: the columnar fast path
@@ -117,6 +118,36 @@ frame, so one code path works for both. Full example:
   returns `GROUP_MULTI_KEY_NEEDS_ARROW`.
 - Arrow constructors cover int64 / float64 / utf8 columns; bool and
   nullable construction from Lex lists stays on the legacy engine.
+
+### Lazy plans
+
+`src/lazy` layers a query planner over the same kernels: build a
+`Plan` (no execution), run it with `collect` (scan sources; effect
+`[fs_read]`) or `collect_frame` (in-memory sources; pure). At
+collect time the plan is rewritten — every filter runs before
+sorts/selects in its segment, and when the plan narrows (a `select`
+or `group_agg`), untouched columns are pruned at the source. For
+`scan_parquet` the projection is pushed into the reader itself:
+H2O q2 over a 9-column parquet file drops from 323 ms to 177 ms
+because only 3 columns are decoded (`bench/REPORT.md`).
+
+```lex
+import "./src/lazy"  as lazy
+import "./src/group" as grp
+
+fn q2(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameError] {
+  lazy.collect(lazy.group_agg(lazy.scan_parquet(path),
+    ["id1", "id2"], [grp.agg_spec("v1_sum", "v1", grp.agg_sum())]))
+}
+```
+
+`lazy.explain(plan)` renders the rewritten plan (one line per op) so
+you can see what `collect` will actually run. Semantics differences
+from eager, by design: a filter placed after the `select` that drops
+its column still works (it's hoisted above), and a misspelled column
+anywhere in a pruned plan is a loud `SELECT_UNKNOWN_COLUMN` instead
+of eager's silent sort no-op. Sort tie order is not guaranteed when
+filters hoist across a sort (Polars default).
 
 ## Error handling
 
