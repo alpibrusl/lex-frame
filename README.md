@@ -102,13 +102,21 @@ Every `_fast` op falls back to the legacy engine on a list-backed
 frame, so one code path works for both. Full example:
 `examples/06_fast_pipeline.lex`.
 
-**Sharp edges** (v1 of the migration, see issue #6):
+**Sharp edges** (see issues #6 and #19):
 
-- An arrow-backed frame's legacy `columns` map is **empty** — the
-  closure-based ops (`filter_rows`, `with_column`, `inspect.*`
-  walkers, `dist.*`) see no data on it. Stay on `_fast` ops
-  end-to-end, and get data out via `write_csv_fast` /
-  `write_parquet` or the `agg.*_fast` reductions.
+- An arrow-backed frame's legacy `columns` map is **empty**. Since
+  #19 no public op silently returns empty/wrong data because of it:
+  ops with kernel equivalents produce correct results on both
+  backings, and the rest refuse with `FRAME_LEGACY_ONLY`. The full
+  status per op:
+
+  | Status on an arrow-backed frame | Ops |
+  |---|---|
+  | **Kernel-backed** (correct on both backings) | all `_fast` ops; `frame.head/tail/slice_rows`; `sort.sort_by`; `select.select_cols/drop_cols`; `group.value_counts`; `join.inner_join/left_join`; `agg.sum_col/mean_col/min_col/max_col/count_all/count_non_null`; `stats.null_counts`; `inspect.summary/infer_dtypes/column_profile/sample_rows/null_report/history`; the whole `lazy` module |
+  | **Refuses with `FRAME_LEGACY_ONLY`** | `select.filter_rows/with_column/rename_col`; `group.group_by`; `join.cross_join`; `dist.par_apply_col/par_map_rows`; `io.write_csv` |
+  | **Explicit marker instead of rows** | `inspect.to_markdown/to_json_payload` render schema + a "not materialized" note (row values need the legacy map) |
+  | **Degraded, visible** | `agg.min_col/max_col` are int-kernel-only (`None` on float/utf8 arrow columns); `agg.variance_col/std_col/n_distinct` return `None`/`0` (no kernel yet); `sample_rows` is first-n, not strided; `stats.describe/correlation` and `dist.par_apply_all_cols/par_filter_rows` still walk the legacy map — materialize first or stay list-backed |
+
 - Mixing backings in a join is an error (`JOIN_MIXED_BACKING`)
   rather than a silent empty result.
 - `group_agg_fast` / `group_agg_by_keys_fast` support `sum | mean |
@@ -180,7 +188,9 @@ match sel.drop_col(df, "nonexistent") {
 | `GROUP_UNKNOWN_KEY` | group | Fast group-by key column not in the arrow table |
 | `GROUP_UNSUPPORTED_FAST_AGG` | group | `std`/`var`/`count_non_null` requested via `group_agg_fast` on an arrow-backed frame |
 | `GROUP_MULTI_KEY_NEEDS_ARROW` | group | Multi-key `group_agg_by_keys_fast` on a list-backed frame |
-| `JOIN_MIXED_BACKING` | join | One side arrow-backed, the other list-backed in a `_fast` join |
+| `JOIN_MIXED_BACKING` | join | One side arrow-backed, the other list-backed in a join |
+| `FRAME_LEGACY_ONLY` | frame, select, group, join, dist, io, lazy | A legacy-engine-only op (closure filter/derive, `rename_col`, `group_by`, `cross_join`, `dist.par_*`, legacy `write_csv`) called on an arrow-backed frame — the message names the fast alternative |
+| `LAZY_SOURCE_NEEDS_READ` | lazy | `collect_frame` (the pure entry point) called on a plan that scans a file — use `collect` |
 | `IO_EMPTY_INPUT` | io | CSV string is empty |
 | `IO_READ_FAILED` | io | Filesystem / arrow read error |
 | `IO_WRITE_FAILED` | io | Filesystem / arrow write error, or a fast writer given a list-backed frame |

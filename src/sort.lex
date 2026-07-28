@@ -12,7 +12,18 @@ import "./frame" as frame
 
 import "./provenance" as prov
 
+# On arrow-backed frames this delegates to the df.sort_by kernel
+# (pre-#19 the legacy walk saw an empty columns map and silently
+# returned the frame unsorted). Legacy semantics preserved on both
+# paths: an unknown column returns the frame unchanged.
 fn sort_by(df :: frame.DataFrame, col_name :: Str, asc :: Bool) -> frame.DataFrame {
+  match df.arrow_table {
+    Some(_) => sort_by_fast(df, col_name, asc),
+    None => sort_by_legacy(df, col_name, asc),
+  }
+}
+
+fn sort_by_legacy(df :: frame.DataFrame, col_name :: Str, asc :: Bool) -> frame.DataFrame {
   match map.get(df.columns, col_name) {
     None => df,
     Some(c) => {

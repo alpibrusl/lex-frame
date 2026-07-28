@@ -1,3 +1,5 @@
+import "std.list" as list
+
 import "std.map" as map
 
 import "std.arrow" as arrow
@@ -90,31 +92,60 @@ fn count_non_null_fast(df :: frame.DataFrame, name :: Str) -> Int {
   }
 }
 
+# ===== Legacy-named reductions =====
+#
+# The legacy-named ops below delegate to the arrow kernels on
+# arrow-backed frames (pre-#19 they silently returned None/0 against
+# the empty legacy map). Int-only kernel caveat: min/max on a float
+# or utf8 arrow column return None — same visible result as before,
+# but int columns are now correct. variance/std/n_distinct have no
+# kernel yet and stay None/0 on arrow frames (see lex-frame#19).
 fn sum_col(df :: frame.DataFrame, name :: Str) -> Option[val.Value] {
-  match get_col(df, name) {
-    None => None,
-    Some(c) => col.col_sum(c),
+  match df.arrow_table {
+    Some(_) => match sum_col_fast(df, name) {
+      None => None,
+      Some(n) => Some(val.vint(n)),
+    },
+    None => match get_col(df, name) {
+      None => None,
+      Some(c) => col.col_sum(c),
+    },
   }
 }
 
 fn mean_col(df :: frame.DataFrame, name :: Str) -> Option[Float] {
-  match get_col(df, name) {
-    None => None,
-    Some(c) => col.col_mean(c),
+  match df.arrow_table {
+    Some(_) => mean_col_fast(df, name),
+    None => match get_col(df, name) {
+      None => None,
+      Some(c) => col.col_mean(c),
+    },
   }
 }
 
 fn min_col(df :: frame.DataFrame, name :: Str) -> Option[val.Value] {
-  match get_col(df, name) {
-    None => None,
-    Some(c) => col.col_min(c),
+  match df.arrow_table {
+    Some(_) => match min_col_fast(df, name) {
+      None => None,
+      Some(n) => Some(val.vint(n)),
+    },
+    None => match get_col(df, name) {
+      None => None,
+      Some(c) => col.col_min(c),
+    },
   }
 }
 
 fn max_col(df :: frame.DataFrame, name :: Str) -> Option[val.Value] {
-  match get_col(df, name) {
-    None => None,
-    Some(c) => col.col_max(c),
+  match df.arrow_table {
+    Some(_) => match max_col_fast(df, name) {
+      None => None,
+      Some(n) => Some(val.vint(n)),
+    },
+    None => match get_col(df, name) {
+      None => None,
+      Some(c) => col.col_max(c),
+    },
   }
 }
 
@@ -133,16 +164,28 @@ fn std_col(df :: frame.DataFrame, name :: Str) -> Option[Float] {
 }
 
 fn count_all(df :: frame.DataFrame, name :: Str) -> Int {
-  match get_col(df, name) {
-    None => 0,
-    Some(c) => col.col_len(c),
+  match df.arrow_table {
+    Some(_) => if list.fold(df.col_names, false, fn (acc :: Bool, n :: Str) -> Bool {
+      acc or n == name
+    }) {
+      df.nrows
+    } else {
+      0
+    },
+    None => match get_col(df, name) {
+      None => 0,
+      Some(c) => col.col_len(c),
+    },
   }
 }
 
 fn count_non_null(df :: frame.DataFrame, name :: Str) -> Int {
-  match get_col(df, name) {
-    None => 0,
-    Some(c) => col.col_non_null_count(c),
+  match df.arrow_table {
+    Some(_) => count_non_null_fast(df, name),
+    None => match get_col(df, name) {
+      None => 0,
+      Some(c) => col.col_non_null_count(c),
+    },
   }
 }
 

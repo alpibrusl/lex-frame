@@ -40,6 +40,14 @@ fn not_found_error(name :: Str) -> FrameError {
   frame_err("FRAME_COLUMN_NOT_FOUND", str.concat("column '", str.concat(name, "' not found")), name)
 }
 
+# Standard refusal for ops that only run on the legacy (list-backed)
+# engine. An arrow-backed frame's legacy `columns` map is empty, so
+# instead of silently returning empty results (the pre-#19 behavior)
+# these ops error with the fast-path alternative in the message.
+fn legacy_only_error(op :: Str, hint :: Str) -> FrameError {
+  frame_err("FRAME_LEGACY_ONLY", str.concat(op, str.concat(" runs on the legacy engine and this frame is arrow-backed (empty legacy columns); ", hint)), op)
+}
+
 fn record_op(df :: DataFrame, op :: prov.Op) -> DataFrame {
   { col_names: df.col_names, columns: df.columns, nrows: df.nrows, provenance: list.cons(op, df.provenance), arrow_table: df.arrow_table }
 }
@@ -204,34 +212,56 @@ fn get_row(df :: DataFrame, idx :: Int) -> List[(Str, val.Value)] {
   })
 }
 
+# head / tail / slice_rows dispatch to the zero-copy arrow kernels
+# on arrow-backed frames (RecordBatch::slice — no data copied), and
+# to the legacy pick_rows walk on list-backed frames. Pre-#19 the
+# legacy walk ran on both backings and silently produced empty rows
+# on arrow frames.
 fn head(df :: DataFrame, n :: Int) -> DataFrame {
-  let actual := if n > df.nrows {
-    df.nrows
-  } else {
-    n
+  match df.arrow_table {
+    Some(t) => with_arrow_table(df, arrow.head(t, n), prov.op_head(n)),
+    None => {
+      let actual := if n > df.nrows {
+        df.nrows
+      } else {
+        n
+      }
+      let df2 := pick_rows(df, range_list(0, actual))
+      { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_head(n), df.provenance), arrow_table: df2.arrow_table }
+    },
   }
-  let df2 := pick_rows(df, range_list(0, actual))
-  { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_head(n), df.provenance), arrow_table: df2.arrow_table }
 }
 
 fn tail(df :: DataFrame, n :: Int) -> DataFrame {
-  let start := if n >= df.nrows {
-    0
-  } else {
-    df.nrows - n
+  match df.arrow_table {
+    Some(t) => with_arrow_table(df, arrow.tail(t, n), prov.op_tail(n)),
+    None => {
+      let start := if n >= df.nrows {
+        0
+      } else {
+        df.nrows - n
+      }
+      let df2 := pick_rows(df, range_list(start, df.nrows))
+      { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_tail(n), df.provenance), arrow_table: df2.arrow_table }
+    },
   }
-  let df2 := pick_rows(df, range_list(start, df.nrows))
-  { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_tail(n), df.provenance), arrow_table: df2.arrow_table }
 }
 
+# `arrow.slice(t, start, stop)` is (start, stop-exclusive) — same
+# contract as the legacy path below.
 fn slice_rows(df :: DataFrame, start :: Int, stop :: Int) -> DataFrame {
-  let actual_stop := if stop > df.nrows {
-    df.nrows
-  } else {
-    stop
+  match df.arrow_table {
+    Some(t) => with_arrow_table(df, arrow.slice(t, start, stop), prov.op_slice(start, stop)),
+    None => {
+      let actual_stop := if stop > df.nrows {
+        df.nrows
+      } else {
+        stop
+      }
+      let df2 := pick_rows(df, range_list(start, actual_stop))
+      { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_slice(start, stop), df.provenance), arrow_table: df2.arrow_table }
+    },
   }
-  let df2 := pick_rows(df, range_list(start, actual_stop))
-  { col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_slice(start, stop), df.provenance), arrow_table: df2.arrow_table }
 }
 
 fn add_column(df :: DataFrame, name :: Str, vals :: List[val.Value]) -> Result[DataFrame, FrameError] {

@@ -60,7 +60,17 @@ fn row_get(row :: List[(Str, val.Value)], name :: Str) -> Option[val.Value] {
   }
 }
 
+# On arrow-backed frames this delegates to the arrow projection
+# kernel via select_cols_fast (pre-#19 the legacy path silently
+# dropped both the arrow backing and the data).
 fn select_cols(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    Some(_) => select_cols_fast(df, wanted),
+    None => select_cols_legacy(df, wanted),
+  }
+}
+
+fn select_cols_legacy(df :: frame.DataFrame, wanted :: List[Str]) -> Result[frame.DataFrame, frame.FrameError] {
   let missing := list.filter(wanted, fn (name :: Str) -> Bool {
     list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool {
       acc and n != name
@@ -110,6 +120,13 @@ fn drop_cols(df :: frame.DataFrame, to_drop :: List[Str]) -> Result[frame.DataFr
 }
 
 fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("rename_col", "no arrow rename kernel yet; rename before converting to arrow, or write out and re-read")),
+    None => rename_col_legacy(df, old_name, new_name),
+  }
+}
+
+fn rename_col_legacy(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
   let missing := list.fold(df.col_names, true, fn (acc :: Bool, n :: Str) -> Bool {
     acc and n != old_name
   })
@@ -132,12 +149,20 @@ fn rename_col(df :: frame.DataFrame, old_name :: Str, new_name :: Str) -> Result
   }
 }
 
+# Closure predicates only run on the legacy engine — an arrow-backed
+# frame refuses (FRAME_LEGACY_ONLY) instead of silently filtering
+# zero rows against the empty legacy map (pre-#19 behavior).
 fn filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, val.Value)]) -> Bool) -> Result[frame.DataFrame, frame.FrameError] {
-  let kept := list.filter(frame.range_list(0, df.nrows), fn (i :: Int) -> Bool {
-    pred(frame.get_row(df, i))
-  })
-  let df2 := frame.pick_rows(df, kept)
-  Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance), arrow_table: None })
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("filter_rows", "use the filter_*_fast ops for kernel-supported predicates")),
+    None => {
+      let kept := list.filter(frame.range_list(0, df.nrows), fn (i :: Int) -> Bool {
+        pred(frame.get_row(df, i))
+      })
+      let df2 := frame.pick_rows(df, kept)
+      Ok({ col_names: df2.col_names, columns: df2.columns, nrows: df2.nrows, provenance: list.cons(prov.op_filter(pred_desc, df2.nrows), df.provenance), arrow_table: None })
+    },
+  }
 }
 
 # Shared shape for the fast filters below: arrow-backed frames route
@@ -321,10 +346,18 @@ fn drop_nulls_fast(df :: frame.DataFrame, cols :: List[Str]) -> Result[frame.Dat
   }
 }
 
+# Derived columns run the closure per row on the legacy engine —
+# arrow-backed frames refuse rather than deriving from all-null rows
+# (upstream candidate: kernel-backed arithmetic derives, lex-frame#19).
 fn with_column(df :: frame.DataFrame, name :: Str, derive :: (List[(Str, val.Value)]) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {
-  let new_vals := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> val.Value {
-    derive(frame.get_row(df, i))
-  })
-  frame.add_column(df, name, new_vals)
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("with_column", "derived columns need the legacy engine; build the frame list-backed or derive before converting to arrow")),
+    None => {
+      let new_vals := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> val.Value {
+        derive(frame.get_row(df, i))
+      })
+      frame.add_column(df, name, new_vals)
+    },
+  }
 }
 

@@ -18,7 +18,17 @@ fn estimate_par_cost(df :: frame.DataFrame) -> Int {
   df.nrows * list.len(df.col_names)
 }
 
+# The dist walkers are legacy-only (closure per value/row) — arrow-
+# backed frames refuse instead of erroring with a misleading
+# not-found (pre-#19) or silently transforming nothing.
 fn par_apply_col(df :: frame.DataFrame, col_name :: Str, transform :: (val.Value) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("dist.par_apply_col", "closure transforms need the legacy engine; use the _fast kernel ops or build the frame list-backed")),
+    None => par_apply_col_legacy(df, col_name, transform),
+  }
+}
+
+fn par_apply_col_legacy(df :: frame.DataFrame, col_name :: Str, transform :: (val.Value) -> val.Value) -> Result[frame.DataFrame, frame.FrameError] {
   match map.get(df.columns, col_name) {
     None => Err(frame.not_found_error(col_name)),
     Some(c) => {
@@ -79,6 +89,13 @@ fn par_filter_rows(df :: frame.DataFrame, pred_desc :: Str, pred :: (List[(Str, 
 }
 
 fn par_map_rows(df :: frame.DataFrame, transform :: (List[(Str, val.Value)]) -> List[(Str, val.Value)]) -> Result[frame.DataFrame, frame.FrameError] {
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("dist.par_map_rows", "row closures need the legacy engine; use the _fast kernel ops or build the frame list-backed")),
+    None => par_map_rows_legacy(df, transform),
+  }
+}
+
+fn par_map_rows_legacy(df :: frame.DataFrame, transform :: (List[(Str, val.Value)]) -> List[(Str, val.Value)]) -> Result[frame.DataFrame, frame.FrameError] {
   let rows := list.map(frame.range_list(0, df.nrows), fn (i :: Int) -> List[(Str, val.Value)] {
     frame.get_row(df, i)
   })
