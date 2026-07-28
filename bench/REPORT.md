@@ -345,3 +345,32 @@ q7's derived `max-min` column (the group halves run, see
 python3 bench/gen_h2o_csv.py 1000000 /tmp/h2o_g1_1e6.csv
 lex run --allow-effects fs_read,fs_write,io bench/h2o_groupby.lex q2 '"/tmp/h2o_g1_1e6.csv"'
 ```
+
+## Lazy plans — plan rewrites vs the eager fast API (measured, lex 0.10.7)
+
+`lazy.collect` runs the same std.df kernels as the eager `_fast` ops;
+the delta below is purely what the plan-level rewrites buy (filter
+hoisting + projection pruning — lex-frame#16/#17). Interleaved A/B
+(eager/lazy alternating per iteration so load drift cancels), 9
+samples, median wall time, fresh `lex run` process per sample, n=1e6:
+
+| workload | eager | lazy | note |
+|---|---:|---:|---|
+| filter→sort→group pipeline (CSV x,y,g) | 280 ms | 231 ms | prunes `y` before the sort |
+| H2O q2 (CSV, 9 cols) | 527 ms | 496 ms | CSV reader can't prune; post-read projection only |
+| H2O q2 (parquet, 9 cols) | 323 ms | **177 ms** | projection pushed into the parquet reader — 3 of 9 columns decoded |
+
+**Reading this.** Projection pushdown into the parquet reader is the
+headline: q2 drops 45% with zero kernel changes. On CSV the reader
+decodes every column regardless (upstream `arrow.read_csv` has no
+projection parameter yet — lex-lang candidate once measurement
+justifies it), so lazy only helps CSV pipelines whose intermediate
+ops carry pruned columns (the pipeline row). These numbers are on
+lex 0.10.7's single-threaded CSV reader; the 0.10.8 parallel reader
+shrinks every CSV cell further and is orthogonal to these rewrites.
+
+```bash
+python3 bench/gen_h2o_csv.py 1000000 /tmp/h2o_g1_1e6.csv
+lex run --allow-effects fs_read,fs_write,io bench/bench_lazy.lex prep_parquet '"/tmp/h2o_g1_1e6.csv"' '"/tmp/h2o_g1_1e6.parquet"'
+lex run --allow-effects fs_read,fs_write,io bench/bench_lazy.lex q2_parquet_lazy '"/tmp/h2o_g1_1e6.parquet"'
+```
