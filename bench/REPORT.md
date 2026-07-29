@@ -374,3 +374,29 @@ python3 bench/gen_h2o_csv.py 1000000 /tmp/h2o_g1_1e6.csv
 lex run --allow-effects fs_read,fs_write,io bench/bench_lazy.lex prep_parquet '"/tmp/h2o_g1_1e6.csv"' '"/tmp/h2o_g1_1e6.parquet"'
 lex run --allow-effects fs_read,fs_write,io bench/bench_lazy.lex q2_parquet_lazy '"/tmp/h2o_g1_1e6.parquet"'
 ```
+
+## Toolchain bump to lex 0.10.8 — the parallel CSV reader lands (measured)
+
+Confirms the prediction from the section above: lex-lang 0.10.8
+routes `arrow.read_csv` through Polars' parallel reader
+(alpibrusl/lex-lang#728). Since every CSV-backed op in this repo
+funnels through `io.read_csv_fast` -> `arrow.read_csv`, the win
+applies transparently — no code change here, just the toolchain
+bump in `lex.toml`. Paired A/B on this container (11-sample
+interleaved medians, same binaries as the lex-lang release, fresh
+`lex run` process per sample):
+
+| workload, n=1e6 | lex 0.10.7 | lex 0.10.8 | delta |
+|---|---:|---:|---:|
+| `sum_x_csv` | 169 ms | 113 ms | -33% |
+| filter→sort→group pipeline (CSV) | 261 ms | 203 ms | -22% |
+| H2O q2 (CSV) | 532 ms | 409 ms | -23% |
+| H2O q5 (CSV) | 502 ms | 384 ms | -24% |
+| `lazy` H2O q2 (CSV scan) | 484 ms | 331 ms | -32% |
+| `lazy` H2O q2 (parquet scan) | 199 ms | 192 ms | ~flat (expected — doesn't touch the CSV reader) |
+
+The parquet row is the control: it's untouched by this bump and
+lands within noise, which is what confirms the CSV rows are a real
+effect and not container variance. Reproduce with the same recipe
+as the lazy section above, pointed at a 0.10.7 vs 0.10.8 `lex`
+binary.
