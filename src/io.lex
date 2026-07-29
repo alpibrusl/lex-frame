@@ -202,10 +202,16 @@ fn read_csv_fast(path :: Str) -> [fs_read] Result[frame.DataFrame, frame.FrameEr
   }
 }
 
+# Legacy CSV writer renders from the legacy columns map — an
+# arrow-backed frame refuses (pre-#19 it silently wrote a
+# header-only file). Use write_csv_fast for arrow frames.
 fn write_csv(path :: Str, df :: frame.DataFrame) -> [io] Result[Unit, frame.FrameError] {
-  match io.write(path, render_csv(df)) {
-    Err(e) => Err(frame.frame_err("IO_WRITE_FAILED", str.concat("write failed: ", e), path)),
-    Ok(_) => Ok(()),
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("write_csv", "use write_csv_fast (arrow.write_csv kernel, [fs_write] effect)")),
+    None => match io.write(path, render_csv(df)) {
+      Err(e) => Err(frame.frame_err("IO_WRITE_FAILED", str.concat("write failed: ", e), path)),
+      Ok(_) => Ok(()),
+    },
   }
 }
 

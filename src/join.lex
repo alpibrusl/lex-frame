@@ -14,7 +14,19 @@ import "./frame" as frame
 
 import "./provenance" as prov
 
+# The legacy-named joins delegate to the fast path when either side
+# is arrow-backed (kernel join for arrow+arrow, JOIN_MIXED_BACKING
+# for mixed — pre-#19 an arrow input produced a misleading
+# column-not-found against the empty legacy map).
 fn inner_join(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  match (left.arrow_table, right.arrow_table) {
+    (None, None) => inner_join_legacy(left, right, on),
+    (Some(_), _) => inner_join_fast(left, right, on),
+    (_, Some(_)) => inner_join_fast(left, right, on),
+  }
+}
+
+fn inner_join_legacy(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
   match (map.get(left.columns, on), map.get(right.columns, on)) {
     (None, _) => Err(frame.not_found_error(str.concat("left.", on))),
     (_, None) => Err(frame.not_found_error(str.concat("right.", on))),
@@ -38,6 +50,14 @@ fn inner_join(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> R
 }
 
 fn left_join(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
+  match (left.arrow_table, right.arrow_table) {
+    (None, None) => left_join_legacy(left, right, on),
+    (Some(_), _) => left_join_fast(left, right, on),
+    (_, Some(_)) => left_join_fast(left, right, on),
+  }
+}
+
+fn left_join_legacy(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) -> Result[frame.DataFrame, frame.FrameError] {
   match (map.get(left.columns, on), map.get(right.columns, on)) {
     (None, _) => Err(frame.not_found_error(str.concat("left.", on))),
     (_, None) => Err(frame.not_found_error(str.concat("right.", on))),
@@ -79,7 +99,7 @@ fn inner_join_fast(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str)
       Err(e) => Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND", e, on)),
       Ok(t2) => Ok(frame.with_arrow_table(left, t2, prov.op_join("inner", on))),
     },
-    (None, None) => inner_join(left, right, on),
+    (None, None) => inner_join_legacy(left, right, on),
     (Some(_), None) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
     (None, Some(_)) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
   }
@@ -91,13 +111,23 @@ fn left_join_fast(left :: frame.DataFrame, right :: frame.DataFrame, on :: Str) 
       Err(e) => Err(frame.frame_err("FRAME_COLUMN_NOT_FOUND", e, on)),
       Ok(t2) => Ok(frame.with_arrow_table(left, t2, prov.op_join("left", on))),
     },
-    (None, None) => left_join(left, right, on),
+    (None, None) => left_join_legacy(left, right, on),
     (Some(_), None) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
     (None, Some(_)) => Err(frame.frame_err("JOIN_MIXED_BACKING", "one side is arrow-backed and the other is list-backed; build both sides the same way (e.g. both via io.read_csv_fast or both via frame.from_columns)", on)),
   }
 }
 
+# Cross join has no df kernel yet — arrow-backed inputs refuse
+# (pre-#19 they silently produced rows of nulls).
 fn cross_join(left :: frame.DataFrame, right :: frame.DataFrame) -> Result[frame.DataFrame, frame.FrameError] {
+  match (left.arrow_table, right.arrow_table) {
+    (None, None) => cross_join_legacy(left, right),
+    (Some(_), _) => Err(frame.legacy_only_error("cross_join", "no df cross-join kernel yet; build both sides list-backed")),
+    (_, Some(_)) => Err(frame.legacy_only_error("cross_join", "no df cross-join kernel yet; build both sides list-backed")),
+  }
+}
+
+fn cross_join_legacy(left :: frame.DataFrame, right :: frame.DataFrame) -> Result[frame.DataFrame, frame.FrameError] {
   let right_names := list.map(right.col_names, fn (n :: Str) -> Str {
     if list.fold(left.col_names, false, fn (acc :: Bool, ln :: Str) -> Bool {
       acc or ln == n

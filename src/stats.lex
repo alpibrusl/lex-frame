@@ -168,9 +168,12 @@ fn null_counts(df :: frame.DataFrame) -> frame.DataFrame {
     val.vstr(nm)
   })
   let count_vals := list.map(df.col_names, fn (nm :: Str) -> val.Value {
-    match map.get(df.columns, nm) {
-      None => val.vnull(),
-      Some(c) => val.vint(col.col_null_count(c)),
+    match df.arrow_table {
+      Some(_) => val.vint(df.nrows - agg.count_non_null_fast(df, nm)),
+      None => match map.get(df.columns, nm) {
+        None => val.vnull(),
+        Some(c) => val.vint(col.col_null_count(c)),
+      },
     }
   })
   let pct_vals := list.map(count_vals, fn (v :: val.Value) -> val.Value {

@@ -64,7 +64,18 @@ type GroupEntry = { key_str :: Str, key_val :: val.Value, subframe :: frame.Data
 
 type GroupedFrame = { group_col :: Str, groups :: List[GroupEntry] }
 
+# The GroupedFrame walk is legacy-only — an arrow-backed frame
+# refuses (FRAME_LEGACY_ONLY) instead of erroring with a misleading
+# not-found for a column that exists (pre-#19 behavior). Use
+# group_agg_fast / group_agg_by_keys_fast on arrow frames.
 fn group_by(df :: frame.DataFrame, col_name :: Str) -> Result[GroupedFrame, frame.FrameError] {
+  match df.arrow_table {
+    Some(_) => Err(frame.legacy_only_error("group_by", "use group_agg_fast / group_agg_by_keys_fast (one df.group_by_agg kernel call)")),
+    None => group_by_legacy(df, col_name),
+  }
+}
+
+fn group_by_legacy(df :: frame.DataFrame, col_name :: Str) -> Result[GroupedFrame, frame.FrameError] {
   match map.get(df.columns, col_name) {
     None => Err(frame.not_found_error(col_name)),
     Some(c) => {
@@ -215,10 +226,16 @@ fn group_agg_fast(df :: frame.DataFrame, key :: Str, specs :: List[AggSpec]) -> 
   group_agg_by_keys_fast(df, [key], specs)
 }
 
+# On arrow-backed frames value_counts is one df.group_by_agg kernel
+# call (pre-#19 it silently produced an empty result via the legacy
+# group walk). Same output shape on both paths: key column + "count".
 fn value_counts(df :: frame.DataFrame, col_name :: Str) -> Result[frame.DataFrame, frame.FrameError] {
-  match group_by(df, col_name) {
-    Err(e) => Err(e),
-    Ok(gf) => Ok(agg(gf, [agg_spec("count", col_name, AggCount)])),
+  match df.arrow_table {
+    Some(_) => group_agg_by_keys_fast(df, [col_name], [agg_spec("count", col_name, AggCount)]),
+    None => match group_by(df, col_name) {
+      Err(e) => Err(e),
+      Ok(gf) => Ok(agg(gf, [agg_spec("count", col_name, AggCount)])),
+    },
   }
 }
 
