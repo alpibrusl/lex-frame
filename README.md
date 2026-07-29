@@ -292,7 +292,7 @@ lex test
 # 13 passed, 0 failed
 ```
 
-Requires lex v0.10.7 (the version pinned in `lex.toml` and CI; `std.arrow` / `std.df` fast paths need >= 0.10.0).
+Requires lex v0.10.8 (the version pinned in `lex.toml` and CI; `std.arrow` / `std.df` fast paths need >= 0.10.0).
 
 ---
 
