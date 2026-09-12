@@ -1,6 +1,6 @@
 [package]
 name        = "lex-frame"
-version     = "0.1.0"
+version     = "0.1.1"
 description = "AI-agent-first column-oriented dataframe library for Lex. Immutable, effect-declared, provenance-tracked, with LLM-friendly inspection helpers."
 lex         = "0.10.18"
 
